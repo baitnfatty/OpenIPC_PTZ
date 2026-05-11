@@ -1,0 +1,184 @@
+#!/bin/sh
+# upt_exec — runs as root by stock's mainctrl when present on SD card
+# Captures all diagnostic data needed to nail down PTZ behavior in OpenIPC
+
+LOG=/mnt/mmc0/diag.log
+exec > "$LOG" 2>&1
+
+echo "=========================================="
+echo "upt_exec STARTED at $(date)"
+echo "=========================================="
+
+# Enable telnet IMMEDIATELY for live debugging
+killall telnetd 2>/dev/null
+telnetd -l /bin/sh &
+echo "[*] Telnet enabled on port 23 (no auth)"
+
+echo ""
+echo "=== MOTOR CONTROL METHOD (the big question) ==="
+ls -la /opt/ch/motor_ctrl_use_pwm.flag /opt/ch/calculate_step_use_pwm_period.flag /opt/ch/new_pwm.flag 2>&1
+if [ -f /opt/ch/motor_ctrl_use_pwm.flag ]; then
+  echo "RESULT: METHOD 1 (kernel PWM driver, STC8G bypassed)"
+else
+  echo "RESULT: METHOD 2 (UART Pelco-D to STC8G MCU)"
+fi
+
+echo ""
+echo "=== ALL /opt/ch/ FLAGS ==="
+ls -la /opt/ch/*.flag 2>&1
+
+echo ""
+echo "=== /sys/devices/virtual/mstar/motor/ ==="
+ls -la /sys/devices/virtual/mstar/motor/ 2>/dev/null
+for f in /sys/devices/virtual/mstar/motor/*; do
+  [ -f "$f" ] && echo "$f = $(cat $f 2>/dev/null)"
+done
+
+echo ""
+echo "=== /dev/motor + /dev/gpiopwm ==="
+ls -la /dev/motor /dev/gpiopwm 2>&1
+
+echo ""
+echo "=== PWM channels ==="
+for p in /sys/class/pwm/pwmchip*/pwm*; do
+  if [ -d "$p" ]; then
+    echo "$p:"
+    echo "  enable=$(cat $p/enable 2>/dev/null)"
+    echo "  period=$(cat $p/period 2>/dev/null)"
+    echo "  duty_cycle=$(cat $p/duty_cycle 2>/dev/null)"
+    echo "  polarity=$(cat $p/polarity 2>/dev/null)"
+  fi
+done
+
+echo ""
+echo "=== GPIOs currently exported ==="
+ls /sys/class/gpio/ 2>&1
+for g in /sys/class/gpio/gpio*; do
+  if [ -d "$g" ]; then
+    echo "$g: dir=$(cat $g/direction 2>/dev/null) val=$(cat $g/value 2>/dev/null)"
+  fi
+done
+
+echo ""
+echo "=== /proc/cmdline ==="
+cat /proc/cmdline
+
+echo ""
+echo "=== /proc/devices (for /dev/motor major) ==="
+cat /proc/devices
+
+echo ""
+echo "=== /proc/interrupts (UART activity) ==="
+cat /proc/interrupts
+
+echo ""
+echo "=== dmesg snippet ==="
+dmesg | grep -iE "uart|motor|pwm|gpio|stc8|hk32|ptz|ttyS|ttyAMA" | head -80
+
+echo ""
+echo "=== U-Boot env (ssn tool) ==="
+/opt/ch/ssn --ubootargs 2>&1
+/opt/ch/ssn --ubootargs2 2>&1
+
+echo ""
+echo "=== UART devices in /dev ==="
+ls -la /dev/ttyAMA* /dev/ttyS* /dev/sercom* /dev/motor 2>&1
+
+echo ""
+echo "=== Which processes hold UART file descriptors ==="
+for tty in ttyS0 ttyS1 ttyS2 ttyAMA1 ttyAMA2 sercom0 motor gpiopwm; do
+  for pid_dir in /proc/[0-9]*; do
+    pid=$(basename $pid_dir)
+    if ls -l /proc/$pid/fd 2>/dev/null | grep -q "$tty"; then
+      cmd=$(cat /proc/$pid/cmdline 2>/dev/null | tr '\0' ' ')
+      echo "PID $pid: $tty held by $cmd"
+    fi
+  done
+done
+
+echo ""
+echo "=== Active /opt/ch processes ==="
+ps 2>/dev/null | head -40
+
+echo ""
+echo "=== Network listening ports ==="
+netstat -tnl 2>/dev/null
+
+echo ""
+echo "=== UART capture round 1 — PASSIVE 60 sec ==="
+echo "Boot-time / heartbeat traffic only"
+
+stty -F /dev/ttyS2 9600 cs8 -cstopb -parenb -crtscts 2>/dev/null
+(timeout 60 cat /dev/ttyS2 > /mnt/mmc0/hk32f_passive.bin 2>/dev/null) &
+
+stty -F /dev/ttyS1 2400 cs8 -cstopb -parenb -crtscts 2>/dev/null
+(timeout 60 cat /dev/ttyS1 > /mnt/mmc0/stc8g_passive.bin 2>/dev/null) &
+
+sleep 65
+
+echo "Passive capture done."
+echo "  HK32F: $(wc -c < /mnt/mmc0/hk32f_passive.bin 2>/dev/null || echo 0) bytes"
+echo "  STC8G: $(wc -c < /mnt/mmc0/stc8g_passive.bin 2>/dev/null || echo 0) bytes"
+
+echo ""
+echo "=== UART capture round 2 — ACTIVE PTZ 60 sec ==="
+echo "Triggering PTZ via Hikvision API on localhost (no auth)"
+
+(timeout 60 cat /dev/ttyS2 > /mnt/mmc0/hk32f_active.bin 2>/dev/null) &
+(timeout 60 cat /dev/ttyS1 > /mnt/mmc0/stc8g_active.bin 2>/dev/null) &
+sleep 2
+
+# Pan right
+wget -q -O - --post-data='<PTZData><pan>30</pan><tilt>0</tilt><zoom>0</zoom></PTZData>' http://127.0.0.1:8000/ISAPI/PTZCtrl/channels/1/continuous 2>&1
+sleep 3
+# Stop
+wget -q -O - --post-data='<PTZData><pan>0</pan><tilt>0</tilt><zoom>0</zoom></PTZData>' http://127.0.0.1:8000/ISAPI/PTZCtrl/channels/1/continuous 2>&1
+sleep 2
+
+# Tilt up
+wget -q -O - --post-data='<PTZData><pan>0</pan><tilt>30</tilt><zoom>0</zoom></PTZData>' http://127.0.0.1:8000/ISAPI/PTZCtrl/channels/1/continuous 2>&1
+sleep 3
+# Stop
+wget -q -O - --post-data='<PTZData><pan>0</pan><tilt>0</tilt><zoom>0</zoom></PTZData>' http://127.0.0.1:8000/ISAPI/PTZCtrl/channels/1/continuous 2>&1
+sleep 2
+
+# Zoom in
+wget -q -O - --post-data='<PTZData><pan>0</pan><tilt>0</tilt><zoom>40</zoom></PTZData>' http://127.0.0.1:8000/ISAPI/PTZCtrl/channels/1/continuous 2>&1
+sleep 3
+# Stop
+wget -q -O - --post-data='<PTZData><pan>0</pan><tilt>0</tilt><zoom>0</zoom></PTZData>' http://127.0.0.1:8000/ISAPI/PTZCtrl/channels/1/continuous 2>&1
+sleep 2
+
+# Zoom out
+wget -q -O - --post-data='<PTZData><pan>0</pan><tilt>0</tilt><zoom>-40</zoom></PTZData>' http://127.0.0.1:8000/ISAPI/PTZCtrl/channels/1/continuous 2>&1
+sleep 3
+# Stop
+wget -q -O - --post-data='<PTZData><pan>0</pan><tilt>0</tilt><zoom>0</zoom></PTZData>' http://127.0.0.1:8000/ISAPI/PTZCtrl/channels/1/continuous 2>&1
+
+wait
+sync
+
+echo "Active capture done."
+echo "  HK32F: $(wc -c < /mnt/mmc0/hk32f_active.bin 2>/dev/null || echo 0) bytes"
+echo "  STC8G: $(wc -c < /mnt/mmc0/stc8g_active.bin 2>/dev/null || echo 0) bytes"
+
+echo ""
+echo "=== Final state of motor / PWM after PTZ ==="
+for f in /sys/devices/virtual/mstar/motor/*; do
+  [ -f "$f" ] && echo "$f = $(cat $f 2>/dev/null)"
+done
+for p in /sys/class/pwm/pwmchip*/pwm*; do
+  if [ -d "$p" ]; then
+    echo "$p: enable=$(cat $p/enable) duty=$(cat $p/duty_cycle)"
+  fi
+done
+
+echo ""
+echo "=========================================="
+echo "upt_exec COMPLETE at $(date)"
+echo "Diagnostic files in /mnt/mmc0/:"
+ls -la /mnt/mmc0/ 2>&1
+echo "Telnet still running: telnet <camera-ip> for live debug"
+echo "=========================================="
+
+sync

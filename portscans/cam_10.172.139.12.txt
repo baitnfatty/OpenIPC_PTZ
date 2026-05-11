@@ -1,0 +1,59 @@
+# Nmap 7.99 scan initiated Fri May  8 12:56:09 2026 as: "C:\\Program Files (x86)\\Nmap\\nmap.exe" -sV -sC -T4 --open -p 1-10000,34567,37777,49152,49153,49154 -oN C:/Users/matth/investigate/portscans/cam_10.172.139.12.txt 10.172.139.12
+Nmap scan report for 10.172.139.12
+Host is up (0.0046s latency).
+Not shown: 10001 closed tcp ports (reset)
+PORT     STATE SERVICE    VERSION
+80/tcp   open  http       Mongoose httpd
+| http-auth: 
+| HTTP/1.1 401 Unauthorized\x0D
+|_  Basic realm=index.html
+|_http-title: Login
+554/tcp  open  rtsp       Hipcam RealServer rtspd 1.0
+|_rtsp-methods: OPTIONS,DESCRIBE,SETUP,TEARDOWN,PLAY,SET_PARAMETER,GET_PARAMETER
+1935/tcp open  tcpwrapped
+8080/tcp open  http-proxy
+| fingerprint-strings: 
+|   FourOhFourRequest, GetRequest: 
+|     HTTP/1.1 400 Bad Request
+|     Content-Type: (null)
+|     Content-Length: 1397
+|     Connection: close
+|_    <?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:e="http://www.w3.org/2003/05/soap-encoding" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:wsa="http://www.w3.org/2005/08/addressing" xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:tns1="http://www.onvif.org/ver10/topics" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xop="http://www.w3.org/2004/08/xop/include" xmlns:tt="http://www.onvif.org/ver10/schema" xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2" xmlns:wstop="http://docs.oasis-open.org/wsn/t-1" xmlns:tds="http://www.onvif.org/ver10/device/wsdl" xmlns:tan="http://www.onvif.org/ver20/analytics/wsdl" xmlns:tr2="http://www.onvif.org/ver20/media/wsdl" xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tev="http://ww
+|_http-title: Site doesn't have a title ((null)).
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port8080-TCP:V=7.99%I=7%D=5/8%Time=69FE15BF%P=i686-pc-windows-windows%r
+SF:(GetRequest,5D0,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nContent-Type:\x2
+SF:0\(null\)\r\nContent-Length:\x201397\r\nConnection:\x20close\r\n\r\n<\?
+SF:xml\x20version=\"1\.0\"\x20encoding=\"UTF-8\"\?><s:Envelope\x20xmlns:s=
+SF:\"http://www\.w3\.org/2003/05/soap-envelope\"\x20xmlns:e=\"http://www\.
+SF:w3\.org/2003/05/soap-encoding\"\x20xmlns:xsi=\"http://www\.w3\.org/2001
+SF:/XMLSchema-instance\"\x20xmlns:wsa=\"http://www\.w3\.org/2005/08/addres
+SF:sing\"\x20xmlns:xmime=\"http://www\.w3\.org/2005/05/xmlmime\"\x20xmlns:
+SF:tns1=\"http://www\.onvif\.org/ver10/topics\"\x20xmlns:xs=\"http://www\.
+SF:w3\.org/2001/XMLSchema\"\x20xmlns:xop=\"http://www\.w3\.org/2004/08/xop
+SF:/include\"\x20xmlns:tt=\"http://www\.onvif\.org/ver10/schema\"\x20xmlns
+SF::wsnt=\"http://docs\.oasis-open\.org/wsn/b-2\"\x20xmlns:wstop=\"http://
+SF:docs\.oasis-open\.org/wsn/t-1\"\x20xmlns:tds=\"http://www\.onvif\.org/v
+SF:er10/device/wsdl\"\x20xmlns:tan=\"http://www\.onvif\.org/ver20/analytic
+SF:s/wsdl\"\x20xmlns:tr2=\"http://www\.onvif\.org/ver20/media/wsdl\"\x20xm
+SF:lns:trt=\"http://www\.onvif\.org/ver10/media/wsdl\"\x20xmlns:tev=\"http
+SF:://ww")%r(FourOhFourRequest,5D0,"HTTP/1\.1\x20400\x20Bad\x20Request\r\n
+SF:Content-Type:\x20\(null\)\r\nContent-Length:\x201397\r\nConnection:\x20
+SF:close\r\n\r\n<\?xml\x20version=\"1\.0\"\x20encoding=\"UTF-8\"\?><s:Enve
+SF:lope\x20xmlns:s=\"http://www\.w3\.org/2003/05/soap-envelope\"\x20xmlns:
+SF:e=\"http://www\.w3\.org/2003/05/soap-encoding\"\x20xmlns:xsi=\"http://w
+SF:ww\.w3\.org/2001/XMLSchema-instance\"\x20xmlns:wsa=\"http://www\.w3\.or
+SF:g/2005/08/addressing\"\x20xmlns:xmime=\"http://www\.w3\.org/2005/05/xml
+SF:mime\"\x20xmlns:tns1=\"http://www\.onvif\.org/ver10/topics\"\x20xmlns:x
+SF:s=\"http://www\.w3\.org/2001/XMLSchema\"\x20xmlns:xop=\"http://www\.w3\
+SF:.org/2004/08/xop/include\"\x20xmlns:tt=\"http://www\.onvif\.org/ver10/s
+SF:chema\"\x20xmlns:wsnt=\"http://docs\.oasis-open\.org/wsn/b-2\"\x20xmlns
+SF::wstop=\"http://docs\.oasis-open\.org/wsn/t-1\"\x20xmlns:tds=\"http://w
+SF:ww\.onvif\.org/ver10/device/wsdl\"\x20xmlns:tan=\"http://www\.onvif\.or
+SF:g/ver20/analytics/wsdl\"\x20xmlns:tr2=\"http://www\.onvif\.org/ver20/me
+SF:dia/wsdl\"\x20xmlns:trt=\"http://www\.onvif\.org/ver10/media/wsdl\"\x20
+SF:xmlns:tev=\"http://ww");
+Service Info: Device: webcam
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+# Nmap done at Fri May  8 12:57:32 2026 -- 1 IP address (1 host up) scanned in 83.64 seconds

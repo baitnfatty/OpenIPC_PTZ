@@ -1,0 +1,7 @@
+#!/bin/sh
+# Minimal test - just create a marker file so we know if mainctrl ran us
+echo "ran at $(date)" > /mnt/mmc0/RAN.txt
+echo "uid=$(id)" >> /mnt/mmc0/RAN.txt
+echo "pwd=$(pwd)" >> /mnt/mmc0/RAN.txt
+ls -la /opt/ch/motor_ctrl_use_pwm.flag /opt/ch/*.flag 2>&1 >> /mnt/mmc0/RAN.txt
+sync

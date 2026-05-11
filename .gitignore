@@ -1,0 +1,40 @@
+# --- Working files / extracted data ---
+sr_extract/
+*.bin-0.extracted/
+
+# --- Rust build artifacts ---
+**/target/
+**/Cargo.lock
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+
+# --- Cloned external sources (recreate via git clone if needed) ---
+nucleo_la/blackpill_source/
+nucleo_la/source/
+nucleo_la/logicalrust/.git/
+nucleo_la/logicalrust/target/
+
+# --- Downloaded binaries / installers ---
+nucleo_la/openocd.zip
+*.msi
+*.exe
+
+# --- Personal / environment ---
+*.env
+*.local
+*credentials*
+*password*
+
+# --- Large captures (regeneratable from camera) — uncomment if you want to track them
+# *.sr
+# *.bin
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/

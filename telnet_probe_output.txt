@@ -1,0 +1,66 @@
+C:\Users\matth\investigate\telnet_probe.py:6: DeprecationWarning: 'telnetlib' is deprecated and slated for removal in Python 3.13
+  import telnetlib
+
+--- Trying login: root:W3st.U3er.W3st ---
+BANNER: ipc login:
+PROMPT: root
+Password:
+RESPONSE:  
+
+
+=== AUTHENTICATED — RUNNING ENUMERATION ===
+
+
+>>> id
+id
+
+
+>>> whoami
+whoami
+Login incorrect
+ipc login: 
+
+>>> uname -a
+uname -a
+Password: 
+
+>>> cat /proc/version
+
+
+
+>>> cat /proc/cpuinfo | head -25
+cat /proc/cpuinfo | head -25
+
+
+>>> cat /proc/meminfo | head -5
+cat /proc/meminfo | head -5
+
+
+>>> ls -la /
+ls -la /
+Login incorrect
+ipc login: 
+
+>>> ls -la /opt 2>/dev/null
+ls -la /opt 2>/dev/null
+Password: 
+
+>>> ls -la /etc/init.d 2>/dev/null | head -20
+
+
+
+>>> ls -la /mnt 2>/dev/null
+ls -la /mnt 2>/dev/null
+
+
+>>> cat /etc/passwd
+cat /etc/passwd
+
+
+>>> cat /etc/shadow 2>/dev/null | head
+cat /etc/shadow 2>/dev/null | head
+Login incorrect
+
+Connection closed during enum
+
+=== Session closed cleanly ===

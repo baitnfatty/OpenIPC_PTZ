@@ -1,0 +1,138 @@
+================================================================================
+MC800S GPIO CONFIGURATION EXTRACTION FROM libtools.so
+================================================================================
+
+FILE VERIFIED:
+  Path: C:\tftp\_stock_backup_20260501.bin-0.extracted\squashfs-root\opt\ch\libtools.so
+  Size: 531 KB
+  Architecture: ELF 32-bit LSB shared object, ARM, EABI5, stripped
+  BuildID: de099f97e47e70975386b035d515b0dc7c20c913
+  Date: Jun 27 2022
+
+================================================================================
+KEY FINDINGS FROM DISASSEMBLY ANALYSIS
+================================================================================
+
+1. PRODUCT_TYPE IDENTIFICATION
+   
+   The firmware supports multiple camera models via product_type-indexed GPIO configs:
+   - Product types found: 0x350, 0xb200-0xb212, 0x500, 0x403, 0xbc6 (3014), 0xbc2 (3010)
+   - MC800S string confirmed in string table
+   - Strings found: MC800S, MC800G, MC800S2, MC800G2
+   - MC800S most likely maps to product_type in range 0xb200-0xb212 (45568-45586)
+   
+   Evidence from gpio_init() at 0x413d8:
+   - Line 413fc-41404: Checks (product_type - 0xb200 - 18) <= 1, suggesting range 0xb200-0xb212
+   - This is the MC800S range based on model naming convention
+
+2. GPIO CONFIG STRUCTURE (52 bytes per entry)
+   
+   Offset  Size  Field                  Purpose
+   ------  ----  -----                  -----------
+   0x00    4     product_type (?)       Model identifier or entry ID
+   0x20    4     GPIO_NUMBER            GPIO pin number for sysfs
+   0x2c    4     TYPE_FIELD             Entry type (2=brightness, 3=reset)
+   0x30    4     CHANNEL_ID             Video channel or function identifier
+   
+   (Other offsets at +8, +12, +16, +24, +28, +36, +40, +48, ... unknown purpose)
+   
+   Total entry size: 52 bytes (0x34)
+
+3. RESET GPIO DETECTION (GetResetGpioPort at 0x417f8)
+   
+   Algorithm:
+   - Loads config array pointer
+   - Iterates through entries (52-byte stride)
+   - Searches for entry where offset +44 (0x2c) == 3 (RESET type)
+   - Returns GPIO number from offset +32 (0x20)
+   - Returns 0xffffffff if not found
+   
+   Key code:
+   417f8: ldr r3, [pc, #84]    // Load array pointer
+   417fa: add r3, pc
+   417fc: ldr r0, [r3, #4]     // Load array size/count
+   41802-41824: Loop and search
+   41818: ldr r1, [r3, #44]    // Load type field at +44
+   41820: ldr r0, [r3, #32]    // Load GPIO number at +32 on match
+
+4. LED BRIGHTNESS GPIO DETECTION (GetLedBrGpioPort at 0x4185c)
+   
+   Algorithm: Similar to GetResetGpioPort but searches for type field value TBD
+   (Likely type==1 or type==4 based on code patterns)
+
+5. GPIO_INIT EXECUTION SEQUENCE (0x413d8+)
+   
+   The gpio_init() function:
+   - Calls InitGpioThread()
+   - Calls ReadVersion() 
+   - Reads product_type via product_type_read()
+   - Branches based on product_type value
+   - For MC800S (0xb200-0xb212 range):
+     - Compares (product_type - 0xb200 - 18) <= 1
+     - If true: executes MC800S-specific GPIO initialization
+   - Calls io_out_write() with GPIO configurations
+   - Calls mysystem() to export GPIOs and set values
+
+6. INITIALIZATION TARGET (InitIoOutValueByChannel at 0x416e0)
+   
+   This function iterates the config array:
+   - Searching for type == 2 entries (brightness LEDs)
+   - Matching by channel ID
+   - Writing GPIO values using io_out_write()
+   - Each config entry: GPIO at +32, type at +44, channel at +48
+
+================================================================================
+MC800S SPECIFIC INFORMATION
+================================================================================
+
+Model String: "MC800S" found in string table
+Hostname Pattern: IPCAM-XXXXXX-MC800S_V2_AF
+NIC Stamp: SSC338Q + IMX415 + 4K + 5x zoom + AF (autofocus)
+Config File: /opt/ch/config.default.mc800s.xml
+Flag File: mc800s.flag
+
+Inferred product_type value: 0xb200 to 0xb212 (decimal 45568-45586)
+Most likely: 0xb200 (45568) or 0xb201 (45569)
+
+================================================================================
+LIMITATIONS & UNKNOWNS
+================================================================================
+
+1. Unable to locate the exact binary layout of the g_io_mc800s config table array
+   - The array pointer is loaded via PC-relative addressing at runtime
+   - Data section analysis did not reveal clear 52-byte config entries
+   - Entries may be embedded in initialization code or dynamically constructed
+   
+2. Exact GPIO pin numbers for MC800S not extracted
+   - Would require runtime debugging or full product_type matching
+   - Or extracting/decompiling the actual config table from memory dump
+   
+3. Secondary GPIO fields (type values 0,1,4,5,etc.) not fully mapped
+   - Type 2 = LED brightness (confirmed via InitIoOutValueByChannel)
+   - Type 3 = Reset (confirmed via GetResetGpioPort)
+   - Other types: purpose unknown
+   
+4. Exact sequence of GPIO initialization not fully traced
+   - gpio_init() logic is product_type-dependent
+   - Would need to trace execution path for product_type 0xb200
+
+================================================================================
+RECOMMENDED NEXT STEPS
+================================================================================
+
+1. Extract runtime memory dump when mainctrl is executing with MC800S
+   - Use: gdb to dump libtools.so memory region or /proc/$PID/maps
+   - Search for "MC800S" string and nearby GPIO config structures
+   
+2. Use product_type_detect() to determine actual product_type value
+   - /etc/product.ver or OTP fuse reading
+   
+3. Dynamic tracing with strace/ltrace to see gpio_init() execution
+   - Capture mysystem() calls and io_out_write() parameters
+   - Reconstruct GPIO operations from logs
+   
+4. Static extraction: Dump .rodata and .data sections to file, analyze with Ghidra
+   - Look for cross-references to GetResetGpioPort and InitIoOutValueByChannel
+   - Trace back to config array definitions
+
+================================================================================

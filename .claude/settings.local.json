@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tasklist /fi \"imagename eq olk.exe\" /v)",
+      "Bash(tasklist /fi \"imagename eq outlook.exe\" /v)",
+      "Bash(wmic process:*)",
+      "Bash(powershell -Command 'Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 15 Name,@{N='\\\\''MemMB'\\\\'';E={[math]::Round\\($_.WorkingSet64/1MB\\)}},CPU,HandleCount | Format-Table -AutoSize')",
+      "Bash(powershell -Command 'Get-Process -Name '\\\\''*outlook*'\\\\'','\\\\''*olk*'\\\\'' -ErrorAction SilentlyContinue | Select-Object Name,@{N='\\\\''MemMB'\\\\'';E={[math]::Round\\($_.WorkingSet64/1MB\\)}},CPU,HandleCount,Id | Format-Table -AutoSize')",
+      "Bash(powershell -Command \"[math]::Round\\(\\(Get-CimInstance Win32_OperatingSystem\\).FreePhysicalMemory/1MB,1\\); 'GB free of'; [math]::Round\\(\\(Get-CimInstance Win32_OperatingSystem\\).TotalVisibleMemorySize/1MB,1\\); 'GB total'; echo '---CPU---'; \\(Get-CimInstance Win32_Processor\\).LoadPercentage; '% CPU'\")",
+      "Bash(powershell -Command 'Get-Process -Name '\\\\''msedgewebview2'\\\\'' -ErrorAction SilentlyContinue | Measure-Object WorkingSet64 -Sum | ForEach-Object { '\\\\''msedgewebview2 total: '\\\\'' + [math]::Round\\($_.Sum/1MB\\) + '\\\\'' MB across '\\\\'' + $_.Count + '\\\\'' processes'\\\\'' }; Get-Process -Name '\\\\''chrome'\\\\'' -ErrorAction SilentlyContinue | Measure-Object WorkingSet64 -Sum | ForEach-Object { '\\\\''chrome total: '\\\\'' + [math]::Round\\($_.Sum/1MB\\) + '\\\\'' MB across '\\\\'' + $_.Count + '\\\\'' processes'\\\\'' }; Get-Process -Name '\\\\''claude'\\\\'' -ErrorAction SilentlyContinue | Measure-Object WorkingSet64 -Sum | ForEach-Object { '\\\\''claude total: '\\\\'' + [math]::Round\\($_.Sum/1MB\\) + '\\\\'' MB across '\\\\'' + $_.Count + '\\\\'' processes'\\\\'' }')",
+      "Bash(powershell -Command 'Get-Process -Name '\\\\''olk'\\\\'' | Select-Object Name,@{N='\\\\''MemMB'\\\\'';E={[math]::Round\\($_.WorkingSet64/1MB\\)}},@{N='\\\\''Threads'\\\\'';E={$_.Threads.Count}},HandleCount,@{N='\\\\''GpuMemMB'\\\\'';E={try{\\(Get-Counter -Counter '\\\\''\\\\GPU Process Memory\\(*olk*\\)\\\\Dedicated Usage'\\\\'' -ErrorAction Stop\\).CounterSamples.CookedValue/1MB}catch{'\\\\''N/A'\\\\''}}}')",
+      "Bash(powershell -Command 'Get-Process | Measure-Object WorkingSet64 -Sum | ForEach-Object { '\\\\''Total process memory: '\\\\'' + [math]::Round\\($_.Sum/1GB,1\\) + '\\\\'' GB'\\\\'' }; echo '\\\\''---GPU---'\\\\''; try { nvidia-smi --query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total --format=csv,noheader 2>&1 } catch { '\\\\''nvidia-smi not available'\\\\'' }')",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(wsl -d Ubuntu -- bash -c \"ls -la /mnt/c/tftp/_stock_backup_20260501.bin-0.extracted/squashfs-root/config/modules/4.9.84/mhal.ko\")",
+      "Read(//mnt/c/tftp/_stock_backup_20260501.bin-0.extracted/squashfs-root/opt/ch/**)",
+      "Read(//c/tftp/_stock_backup_20260501.bin-0.extracted/squashfs-root/opt/ch/**)",
+      "Bash(wsl -d Ubuntu -- arm-linux-gnueabihf-objdump -d /mnt/c/tftp/_stock_backup_20260501.bin-0.extracted/squashfs-root/opt/ch/libtools.so)",
+      "Bash(arm-linux-gnueabihf-readelf -s \"C:/tftp/_stock_backup_20260501.bin-0.extracted/squashfs-root/opt/ch/comm_server\")",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(objdump -d \"C:/tftp/_stock_backup_20260501.bin-0.extracted/squashfs-root/opt/ch/comm_server\")",
+      "Bash(wsl -d *)",
+      "Bash(python3)",
+      "Bash(xxd -g 1 comm_server)",
+      "PowerShell(Get-Process -Name putty -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 1; Get-Item \"C:\\\\Users\\\\matth\\\\Downloads\\\\putty.exe\" -ErrorAction SilentlyContinue | Select-Object Name, Length, LastWriteTime, @{N='Signed';E={\\(Get-AuthenticodeSignature $_.FullName\\).Status}})",
+      "PowerShell(winget search PuTTY --source winget 2>&1)",
+      "PowerShell(wsl -d Ubuntu -- bash /mnt/c/Users/matth/investigate/baud_scan.sh 2>&1 | Select-Object -First 400)",
+      "WebFetch(domain:ipcamtalk.com)",
+      "WebFetch(domain:online.anjvision.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Read(//c/Users/matth/**)",
+      "Read(//c/Users/matth/OneDrive/Desktop/**)",
+      "PowerShell(Write-Output \"=== Check usbipd-win ===\"; Get-Command usbipd -ErrorAction SilentlyContinue | Select-Object Name, Source; usbipd --version 2>&1; Write-Output \"\"; Write-Output \"=== If not installed, install via winget ===\"; if \\(-not \\(Get-Command usbipd -ErrorAction SilentlyContinue\\)\\) { winget install --id dorssel.usbipd-win --accept-source-agreements --accept-package-agreements 2>&1 | Select-Object -Last 5 })"
+    ]
+  }
+}

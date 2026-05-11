@@ -1,0 +1,2034 @@
+
+
+       Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+     HK32F030M
+        
+
+Rev1.0.12
+
+http://wwww.hsxp-hk.com                                        1
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+Contents
+
+History .....................................................................................................5
+
+1  .............................................................................................6
+
+2  .....................................................................................7
+
+2.1 .......................................................................................................................7
+2.2 .......................................................................................................................8
+2.3 ...................................................................................................................9
+2.4 .....................................................................................................................10
+
+3  ................................................................................... 11
+
+3.1 .....................................................................................................................11
+
+3.2 .................................................................................................................12
+
+3.2.1  Flash  .......................................................................................................12
+3.2.2  Flash Option Word .................................................................................13
+
+3.2.3  RAM.......................................................................................................13
+
+     3.2.4 EEPROM.........................................................................................................13
+3.3 CRC ............................................................................................................14
+
+3.4 NVIC...........................................................................................................................15
+
+3.5 EXTI ...........................................................................................................................18
+3.6 .............................................................................................................................18
+
+3.6.1 .........................................................................................................18
+
+3.6.2 .........................................................................................................18
+
+3.7 .............................................................................................................................19
+
+3.7.1 .............................................................................................................19
+
+     3.7.2 .............................................................................................................20
+3.8 .....................................................................................................................20
+
+3.9 POR  PDR ...............................................................................................................20
+
+3.10 .................................................................................................................20
+
+3.11 .................................................................................................................21
+
+3.12 .................................................................................................................21
+
+3.13 System Tick ....................................................................................................22
+
+3.14 .................................................................................................................22
+3.15 .................................................................................................................22
+
+3.16 .................................................................................................................22
+
+3.17 AWU  ..............................................................................................................22
+
+3.18 Beeper  ............................................................................................................23
+
+3.19 I2C  ......................................................................................................................24
+
+3.20 USART........................................................................................................................24
+
+3.21 SPI...............................................................................................................................25
+
+http://wwww.hsxp-hk.com                                                                2
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+      3.22 GPIO ...........................................................................................................................25
+      3.23 ADC ............................................................................................................................25
+
+            3.23.1 ADC  .......................................................................................25
+            3.23.2 AWD  ..............................................................................................26
+      3.24 64Bit-UID ...................................................................................................................26
+      3.25 .....................................................................................................................26
+
+4 ............................................................................ 27
+
+      4.1 .........................................................................................................27
+            4.1.1 .................................................................................................27
+            4.1.2 .................................................................................................27
+            4.1.3 .................................................................................................27
+
+      4.2 .....................................................................................................................28
+            4.2.1 .................................................................................................28
+            4.2.2 .................................................................................................................28
+            4.2.3 .................................................................................................28
+            4.2.4 .................................................................................................28
+            4.2.5 HSI  .................................................................................................29
+            4.2.6 LSI ..................................................................................................29
+            4.2.7 GPIO  ..............................................................................................29
+            4.2.8 Flash  ...........................................................................................29
+            4.2.9 IO ............................................................................................30
+            4.2.10 IO ............................................................................................30
+            4.2.11 NRST ......................................................................................31
+            4.2.12 TIM  ............................................................................................31
+            4.2.13 ADC  .......................................................................................................31
+
+5  ................................................................................... 32
+
+      5.1 .....................................................................................................................32
+      5.2 .............................................................................................................32
+
+6  ................................................................................... 33
+
+      6.1 HK32F030MJ4M6-SO8N...........................................................................................33
+      6.2 HK32F030MD4P6-TSSOP16.....................................................................................35
+      6.3 HK32F030MF4P6-TSSOP20 .....................................................................................37
+      6.4 HK32F030MF4U6-UFQFN20....................................................................................39
+      6.5 AF  SYSCFG ..........................................41
+      6.6 IOMUX  ......................................................................................43
+
+7  ................................................................................... 45
+
+      7.1 SO8N, 4.9mmX6mm, 1.27mm pitch ..........................................................................45
+      7.2 TSSOP16, 5.0mmX4.4mm, 0.65pitch.........................................................................46
+      7.3 TSSOP20, 6.5mmX4.4mm, 0.65mm pitch .................................................................47
+
+http://wwww.hsxp-hk.com  3
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+      7.4 UFQFN20, 4mmX4mm, 0.5mm pitch ........................................................................48
+
+8  ....................................................................................... 49
+
+9  ................................................................................... 50
+
+http://wwww.hsxp-hk.com  4
+         
+
+                Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+History
+
+Version  Date        Description
+1.0.0    2020/03/03  
+1.0.1    2020/03/04   2.2 
+                      3.10 
+1.0.2    2020/03/09   4.2.4 
+                      4.5  HSI 
+1.0.3    2020/03/09   1  HK32F030MF4U6 part number
+1.0.4    2020/04/16   2.3/2.4  HK32F030MF4U6 part number
+1.0.5    2020/4/28    3.1 
+                      6.4  HK32F030MF4U6 pinout
+1.0.6    2020/5/14    7.4  UFQFN20 
+1.0.7    2020/6/19    4.2.4 
+1.0.8    2020/7/3     UID 96bitUID->64bitUID
+1.0.9    2020/8/21    4.2.8 
+1.0.10   2020/9/30    SO8/QFN20  Pinout
+                     
+1.0.11   2020/10/12   MCO 
+1.0.12   2020/10/16   flash 
+                      LOGO
+                      QFN20 Package size
+                      LSI  128K  114K
+                      ADC 
+                      QFN20 Pinout
+
+http://wwww.hsxp-hk.com                                                 5
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+1 
+
+    HK32F030MF4U6/HK32F030MF4P6/HK32F030MD4P6/HK32F030MJ4M6 
+   
+   HK32F030M  MCU 
+   
+
+http://wwww.hsxp-hk.com  6
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+2 
+
+2.1 
+
+      HK32F030M  ARM® CortexTM-M0  32MHz 16K-Byte
+FLASH448-Byte EEPROM  2-KByte SRAM FLASH 
+ 16K-Byte 
+
+      HK32F030M  GPIO IO 
+TSSOP20  16  GPIO
+
+
+      HK32F030M 1  6MbpsUSART1 
+18MbpsSPI/I2S  1  1MHzI2CUSART 
+LIN SmartCard IrDA SIR RX/TX 
+ MCU StopSPI/I2S  4~16 
+/TI NSS  CRC 
+I2S I2C  1MHz/400kHz/100kHz /7/10 
+SMBus  MCU Stop
+
+      HK32F030M  1  16-bit  PWM  4  PWM  3 
+1  16-bit  PWM  4  PWM 1  16-bit 
+ CPU 
+
+      HK32F030M 1  12-bit 1Msps ADC 8Bit1  POR/PDR
+/ 1  ADC 
+
+      HK32F030M HK32F030M 
+
+
+      HK32F030M -40°C +85°C  1.8V  3.6V
+
+
+       HK32F030M 
+       
+       
+       
+       
+       
+       
+       
+       
+
+http://wwww.hsxp-hk.com  7
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+2.2 
+
+    1.8V ~ 3.6V
+    -40ºC ~ +85ºC
+    
+
+          Run  2.3mA@32MHz@3.3V71uA/MHz
+          Sleep  1.2mA@32MHz@3.3V37uA/MHz 21nS
+          D-Sleep 0.61mA@114KHz@3.3V 7.8uS
+          Stop  30uA@3.3V 10uS
+
+               
+    CPU 
+
+          ARM® CortexTM-M0
+          32MHz
+          24  System Tick 
+           FLASH 
+    CPU 
+          SWD 
+          ARM® CoreSightTM ROM-TableDWTBPU
+           DBGMCU 
+
+               
+    
+
+          16K-Byte FLASH128  128-Byte32-bit 8-bit 
+          FLASH 
+          448-Byte EEPROMByte  20uS
+          2K-Byte SRAM
+    CRC 
+    
+            1~32MHz 4  1 
+           HSI 32MHz
+           LSI 114kHz
+    
+          
+          (POR  PDR)
+          
+          IWDG  WWDG
+    GPIO 
+           16  GPIO TSSOP20 
+           GPIO 
+          
+           Open-Drain 
+          
+    IOMUX 
+           SO8N/SOP8 IOMUX 
+
+http://wwww.hsxp-hk.com  8
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+               GPIO  IO 
+    
+
+          1  4MbpsUSARTMCU Stop,
+               
+
+          1  1MHzI2CMCU Stop,
+          1  16MbpsSPI I2S 
+     PWM 
+          1  16-bit  PWM  4  PWM  3 
+          1  16-bit  PWM  4  PWM 
+          1  16-bit  CPU 
+          1  MCU Stop AWU
+    Beeper 
+          1  Beeper  1248kHz 
+           MCU StopBeeper  ADC 
+    
+          1  12-bit 1Msps ADC 5 
+          1  POR/PDR /
+          1  0.8V  ADC 
+    64-bit  ID 
+           HK32F030M  64-bit ID 
+    
+           HBM4000V/CDM500V/MM200V/LU 
+
+2.3 
+
+Part        HK32F030MJ4M6 HK32F030MD4P6 HK32F030MF4P6  HK32F030MF4U6
+            1.8V~3.6V
+            -40ºC ~ +85ºC
+CPU         ARM® CortexTM-M0 32MHz
+SystemTick  1
+Flash       16K Bytes
+EEPROM      448 Bytes
+SRAM        2K Bytes
+CRC         1
+IWDG        1
+WWDG        1
+USART       1
+I2C         1
+SPI/I2S     1
+            1
+            1
+            1
+AWU         1
+
+http://wwww.hsxp-hk.com                                9
+               
+
+                      Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+STBAWU     1          1ADC       1ADC       1ADC
+           1          4Channels  5Channels  5Channels
+ADC        1ADC
+           3Channels  14         16         16
+POR/PDR    1          14         16         16
+           1          TSSOP16    TSSOP20    QFN20
+64Bit-UID  1
+           6
+GPIO       6
+           SO8N
+
+2.4 
+
+                                            
+HK32F030MF4U6          Tray                 QFN20
+HK32F030MF4P6          Tray                 TSSOP20
+HK32F030MD4P6          Tray                 TSSOP16
+HK32F030MJ4M6          Tray                 SO8N
+
+http://wwww.hsxp-hk.com                              10
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+3 
+
+3.1 
+
+   ARM  CortexTM-M0  32  RISC 
+ MCU HK32F030M 
+ CortexTM-M0  ARM 
+
+   
+
+                                                                                                            Cortex-M0 @32MHz
+
+ SWD                                                                                                         DWT                    NVIC
+                                                                                                             BPU
+                                           SWDIO                                                                                   Systick
+                                           SWCLK                                                            SW-DP                  Timer
+
+                                                                                                            AHB-Lite @32MHz
+
+                                                      2K-Byte    16K-Byte FLASH +       GPIO                       64-bit          CRC                
+                                                      SRAM          448 EEPROM                                     ID
+                                                                                         Port A (4-bit)                                                   Reset                
+                                                                 - 32-bit8-bit           Port B (2-bit)                                                Reset                      1~32MHz
+                                                                                         Port C (5-bit)                                                IWDG reset               
+                                                                 - 1 page = 128 bytes    Port D (7-bit)                                       114kHz  WWDG reset
+                                                                 - 16KB FLASH128 pages                                                                Cortex-M0 reset       1.8V~3.6V
+16GPIO I/O                                                                                                                                                                  1.8V~3.6V
+                                                                 - EEPROM 1 byte uS
+   - PA: 1,2,3                                                   - EEPROM 1 byte mS                                                                                           5
+   - PB: 4,5
+   - PC: 3,4,5,6,7                                               - FLASH 1 page 0mS                                                                                           1
+   - PD: 1,2,3,4,5,6
+                                                                                                                                                                            PWM  1 
+                                                                 - FLASH chip    mS
+                                                                                                                                                                            PWM  2 
+USART                                                            - 100K(10)                                                                                                 PWM3
+                                                                 - 10@85C                                                                                                   PWM4
+                                                                                                                                                                            PWM   
+- 6Mbps                                                                                                                                                                       
+
+- 789                                                                                                              APB bus @32MHz                                             2
+
+- TX/RX                                                                                                                                                                     PWM1
+                                                                                                                                                                            PWM2
+- 12                                                                                                                                                                        PWM3
+                                                                                                                                                                            PWM4
+-                                                                                                                                                                             
+
+- 
+
+- 
+
+-                                                                                Beeper                        Timer                                          12bit ADC
+                                                                                                                                           LDO/BGR
+- LIN master                                      18                   USART 1                        IWDG       Stop                         POR     - 1uS1Msps
+- IrDA SIR                                                               SPI 1                                    AWU Timer                   PDR     - 
+                                                                          I2C 1                      WWDG                                             - continuous
+- Smartcard (1.5                                                                                                     Timer 6        (Run)             - BGR
+                                                                                                            - 16-bit counter        (Sleep)           - MCU
+- MCU Stop                                                                                                  - 16-bit prescaler      (D-Sleep)
+                                                                                                            - up/down count                               PWM Timer
+SPI                                                                                                                                 (Stop)
+                                                                                                                                                            TIM1
+   - 18Mbps                                                                                                                                             - 16-bit counter
+  - 416                                                                                  IOMUX                                                          - 16-bit prescaler
+   -                                                                                                                                                    - up/down count
+   - TINSS                                                                               SYSCFG                                                         - 4//PWM
+   -                                                                                                                                                    - 3PWM
+   - CRC                                                                                                                                                - ETR
+   - I2S                                                                                                                                                - 
+
+I2C                                                                                                                                                          TIM2
+                                                                                                                                                      - 16-bit counter
+   - 1MHz                                                                                                                                             - 16-bit prescaler
+   - 400kHz                                                                                                                                           - up/down count
+   - 100kHz                                                                                                                                           - 4//PWM
+   - 
+   -                                                                                                                                                  - ETR
+   - 710
+   - SMBus                                            HK32F030M
+   - MCU Stop
+
+
+
+   - 1248kHz
+
+                                                                                        MCUStop, BeeperADC
+
+http://wwww.hsxp-hk.com                                                                                                                               11
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+3.2 
+
+                                                                   0x5FFF_FFFF  
+                                                                   0x4800_1000
+
+                                                                   0x4800_0C00 GPIO D
+
+                                                                   0x4800_0800 GPIO C
+
+                                                                   0x4800_0400 GPIO B
+
+                                                                   0x4800_0000 GPIO A           AHB
+                                                                                                  
+           0x4001_FFFF                                             0x4002_3400  
+           0x4001_8000   IOMUX
+           0x4001_7C00                                             0x4002_3000  CRC
+           0x4001_5C00  DBGMCU
+           0x4001_5800                                             0x4002_2400  
+           0x4001_3C00  USART1
+           0x4001_3800                                             0x4002_2000 Flash
+           0x4001_3400  SPI1_I2S
+           0x4001_3000     TIM1   0xFFFF_FFFF                      0x4002_1400  
+           0x4001_2C00    ADC1
+           0x4001_2400                            512-MByte block
+           0x4001_0800
+           0x4001_0400     EXTI                                    0x4002_1000  RCC
+           0x4001_0000  SYSCFG
+           0x4000_8000                         Cortex-M0           0x4002_0000  
+           0x4000_7C00                         
+           0x4000_7800   Beeper   0xE000_0000
+           0x4000_7400     AWU    0xDFFF_FFFF    
+           0x4000_7000    
+           0x4000_5800     PWR    0x6000_0000                      0x3FFF_FFFF         
+           0x4000_5400            0x5FFF_FFFF
+           0x4000_3400                                             0x2000_0800         2-KByte
+APB        0x4000_3000     I2C1                512-MByte block     0x2000_07FF          SRAM
+           0x4000_2C00    
+           0x4000_1400    IWDG                                     0x2000_0000
+           0x4000_1000   WWDG
+           0x4000_4000            0x4000_0000                      0x1FFF_FFFF               
+           0x4000_0000     TIM6   0x3FFF_FFFF
+                                                                   0x1FFF_F840              40-Byte
+                           TIM2                   512-MByte block  0x1FFF_F83F   in EEPROM
+
+                                                         SRAM      0x1FFF_F818       
+                                                                   0x1FFF_F817              24-Byte
+                                  0x2000_0000
+                                  0x1FFF_FFFF                      0x1FFF_F800  Option Bytes in EEPROM
+                                                                   0x1FFF_F7FF
+                                                  512-MByte block                            
+                                                                   0x0C00_01C0
+                                                                   0x0C00_01BF             448-Byte
+                                                                                           EEPROM
+                                  0x0000_0000                      0x0C00_0000
+                                                                   0x0BFF_FFFF               
+
+                                                                   0x0000_4000             16-KByte
+                                                                   0x0000_3FFF               Flash
+
+                                                                   0x0000_0000     ()
+
+3.2.1 Flash 
+
+           32 8 
+         
+           128bytes
+         
+           Flash 32 
+
+            Flash /
+
+           
+
+                                                          
+
+            HCLK<= 16MHz0                                  20us
+                                                           40us
+            16MHz<HCLK<= 32MHz1                           Flash  60ms
+                                                          Flash  60ms
+                                                          EEPROM byte  5ms
+           100Kcycles, 10years
+
+
+http://wwww.hsxp-hk.com                                                                         12
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+3.2.2 Flash Option Word 
+
+Flash Option Word 
+
+              [31:24]    [23:16]  [15:8]  [7:0]
+0x1fff_f800
+0x1fff_f804   nUSER      USER     nRDP    RDP
+0x1fff_f808
+0x1fff_f80c   nDATA1     DATA1    nDATA0  DATA0
+0x1fff_f810
+0x1fff_f814   nWRP1      WRP1     nWRP0   WRP0
+
+              nWRP3      WRP3     nWRP2   WRP2
+
+              IWDG_INI_KEY[15:0]  IWDG_RL_IV[11:0]
+
+              DBG_CLK_CTL[15:0]   LSI_LP_CTL[15:0]
+
+ 0x1fff_f800~0x1fff_f80c  HK32F030M 
+ IWDG_RL_IV[11:0] IWDG_RLR  IWDG  hardware
+
+     watchdog  IWDG_RL_IV[11:0] IWDG 
+ IWDG_INI_KEY[15:0] IWDG_RL_IV  IWDG_INI_KEY[15:0]
+
+     0x5b1e IWDG_RL_IV 
+ LSI_LP_CTL[15:0] 0x369c MCU  STOP  STANDBY mode
+
+     LSI  LSION  LSI MCU LSI 
+      LSI_LP_CTL IWDG  STOP 
+     STANDBY mode IWDG  LSI_LP_CTL 
+      IWDG  STOP  STANDBY mode  IWDG 
+     
+ DBG_CLK_CTL 0x12de   CPU  Debug 
+     Debug 
+
+3.2.3  RAM
+
+    2KByte SRAMCPU 
+
+
+3.2.4 EEPROM
+
+    448Byte EEPROM                
+ 
+
+ HCLK<= 16MHz0                     20us
+                                   5ms
+ 16MHz<HCLK<= 32MHz1 
+
+
+ 100Kcycles, 10years
+
+http://wwww.hsxp-hk.com                             13
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+3.3 CRC 
+
+       CRC 
+   
+
+      CRC  32  CRC  CRC 
+    EN/IEC 60335-1 
+   CRC 
+   
+
+http://wwww.hsxp-hk.com  14
+
+
+       Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+3.4 NVIC
+
+   
+  NVIC 
+ 
+  NVIC 
+ 
+ 
+ 
+ 
+ 
+
+HK32F030M  21  HK32F03X 
+
+          Position  Priority                      Description                  Address
+                                                                            0x0000_0000
+          -         --          -          Reserved                         0x0000_0004
+                                                                            0x0000_0008
+          -         -3 fixed    Reset      Reset                            0x0000_000C
+                                                                            0x0000_002C
+          -         -2 fixed    NMI        RCC CSS (clock security)         0x0000_0038
+                                                                            0x0000_003C
+          -         -1 fixed    HardFault                                   0x0000_0040
+                                                                            0x0000_0044
+          -         3 settable SVCall                                       0x0000_0048
+                                                                            0x0000_004C
+          -         5 settable PendSV
+
+          -         6 settable SysTick
+
+          0         7 settable WWDG        Window Watchdog Interrupt
+
+          1         8 settable
+
+          2         9 settable EXTI11      EXTI Line 11 interrupt(AWU_WKP)
+
+          3         10 settable FLASH      Flash global interrupt
+
+http://wwww.hsxp-hk.com
+
+
+       Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+4   11 settable RCC       RCC global interrupt                               0x0000_0050
+
+5   12 settable EXTI0     EXTI Line 0 interrupt                              0x0000_0054
+
+6   13 settable EXTI1     EXTI Line 1 interrupt                              0x0000_0058
+
+7   14 settable EXTI2     EXTI Line 2 interrupt                              0x0000_005C
+
+8   15 settable EXTI3     EXTI Line 3 interrupt                              0x0000_0060
+
+9   16 settable EXTI4     EXTI Line 4 interrupt                              0x0000_0064
+
+10  17 settable EXTI5     EXTI Line 5 interrupt                              0x0000_0068
+
+11  18 settable TIM1_BRK  TIM1 break interrupt                               0x0000_006C
+
+12  19 settable ADC1      ADC1 interrupt (combined with EXTI line 8)         0x0000_0070
+
+13  20 settable TIM1_UP_TRG_COM TIM1 update, trigger and com interrupts      0x0000_0074
+
+14  21 settable TIM1_CC   TIM1 CC1, CC2, CC3 and CC4 interrupts              0x0000_0078
+
+15  22 settable TIM2      TIM2 global interrupt                              0x0000_007C
+
+16  23 settable                                                              0x0000_0080
+
+17  24 settable TIM6      TIM6 global interrupt                              0x0000_0084
+
+18  25 settable                                                              0x0000_0088
+
+19  26 settable                                                              0x0000_008C
+
+20  27 settable                                                              0x0000_0090
+
+21  28 settable EXTI6     EXTI Line 6 interrupt                              0x0000_0094
+
+22  29 settable EXTI7     EXTI Line 7 interrupt                              0x0000_0098
+
+23  30 settable I2C1      I2C global interrupt (combined with EXTI line 10)  0x0000_009C
+
+24  31 settable                                                              0x0000_00A0
+
+25  32 settable SPI1      SPI1 global interrupt                              0x0000_00A4
+
+26  33 settable                                                              0x0000_00A8
+
+27  34 settable USART1    USART1 global interrupt (combined with EXTI line 9) 0x0000_00AC
+
+http://wwww.hsxp-hk.com
+
+
+       Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+28  35 settable                                                0x0000_00B0
+                                                               0x0000_00B4
+29  36 settable                                                0x0000_00B8
+                                                               0x0000_00BC
+30  37 settable
+
+31  38 settable
+
+http://wwww.hsxp-hk.com
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+3.5 EXTI
+
+      HK32F030M  12  EXTI  0~7  IO EXTI 
+      · EXTI 8  ADC  AWD 
+      · EXTI 9  USART  Wakeup 
+      · EXTI 10  I2C  Wakeup 
+      · EXTI 11  AWU  Wakeup 
+       8,9,10  RTSRFTSRSWIER  PR  STOPMODE
+ ERQ  IRQ 
+
+3.6 
+
+      HK32F030M 
+
+3.6.1 
+
+       RCC_CSR 
+   
+
+       NRST ()
+       (WWDG )
+       (IWDG )
+       (SW ) : CortexTM-M0 
+
+            SYSRESETREQ '1'
+       
+       RCC_CSR 
+
+3.6.2 
+
+      
+       /(POR/PDR )
+       
+       RESET 
+    0x0000_0004
+       NRST ()
+    40s  NRST 
+   
+
+http://wwww.hsxp-hk.com  18
+       
+
+              Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+3.7 
+
+    32MHz  RC  CPU
+ LSI 
+
+   HK32F030M  LSIGPIO 
+
+
+3.7.1  
+
+          HSI     32MHz±1%
+          LSI    114kHz-4% ~ +4%
+          GPIO   HSECLK1/2/3/4 32MHz
+
+http://wwww.hsxp-hk.com               19
+                                
+
+                                       Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+3.7.2 
+
+                                                                           RCC_CFGR4.                          FLITFCLK                   FLITFCLK
+                                                                      FLITFCLK_SEL[0]                          Prescaler                  4MHz
+                                                                                                               /1,2,3,4                   to Flash program interface
+                                                                                                   0
+
+                                                                                                   1
+
+                                                               I2C-HSI prescaler                      I2S clk                             RCC_CFGR4.
+                                                               /1,1.5,2,2.5...16                                                          I2C1CLK_SEL
+                                                                                    ~SLEEPING;
+                                                    RCC_CFGR.                     RCC_AHBENR                                                                 0                I2C1 clk
+                                                          SW[1:0]
+                                                                                                                                                             1
+
+                                                                                                                                       HCLK
+                                                                                                                                       to AHB bus, ARM
+                                                                                                                                       core, memory
+
+      32MHz             HSI32M                                                                                            FCLK of Cortex
+       HSI RC      EXTCLK
+                                                                                                                                     to Cortex System timer
+         HSI32MPD                                                                                                         /8
+
+     RCC_CFGR4.
+EXTCLK_SEL[1:0]
+
+PA1 00                                                    00
+                                                          01
+PD7 01                                         Rev 10         SYSCLK                  AHB                                     APB      PCLK
+                                                          11                       Prescaler                               Prescaler
+PB5 10                                                                            /1,2,4...512        HCLK                /1,2,4,8,16                RCC_APBxENR              to APB peripherals
+
+PC5  11                                                                                                                                                        RCC_APBxENR                to TIM
+                                                                                                                                                                         TIM             TIMXCLK
+                                               CSS
+                                                                                                                                                 if(APB prescaler = 1) x1
+                                                                                                                                                                     else x2
+
+     LSI RC        LSI                IWDGCLK                                                                                             ADC Prescaler               ADCEN               ADCCLK
+                                                                                                                                                /2,4                  1
+                                                                                                                                                                      0
+     128KHz                                         IWDG                                                   ADC-HSI
+                                                                                                           Prescaler
+                                      LSICLK                                                           /1,1.5,2,2.5...16                                                      USART1 clk
+                                      EXTCLK
+                                                                                                          USART-HSI
+                                                    RCC_CFGR.MCO[2:0]                                      prescaler
+                                                                                                       /1,1.5,2,2.5...16
+     MCO           Main Clock Output  MCOPRE
+                                      /1,2,4...128                                LSI
+                                                                                  SYSCLK
+                                                                                  HSI32M
+
+Notes:
+
+       SYSCLKHSI32MLSI  GPIO  HSI32M 
+       HCLK AHB prescaler  SYCLK/6
+       FLITFCLKHSI32M  SYSCLK 
+       CSS  GPIO 
+
+3.8 
+
+ VDD/VDDA = 1.83.6VVDD  VDDA 
+     
+
+3.9 POR  PDR
+
+   HK32F030M (POR)/(PDR)
+ 1.8V  VDD  POR/PDR 
+
+
+3.10 
+
+HK32F030M 
+
+http://wwww.hsxp-hk.com                                                                                                                                                                   20
+           
+
+           Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+
+
+ Sleep 
+
+ CPU / CPU
+
+ DeepSleep 
+
+ DeepSleep ,  CPU ,  114kHz 
+
+ STOP / CPU
+
+ Stop 
+
+ SRAM 
+
+HSI   EXTI 
+
+EXTI  I/O 
+
+ Run  2.3mA@32MHz@3.3V71uA/MHz
+
+ Sleep  1.2mA@32MHz@3.3V37uA/MHz 21nS
+
+ D-Sleep 0.61mA@32MHz@3.3V 7.8uS
+
+ Stop  30uA@3.3V 10uS
+
+       
+
+
+
+                               
+
+SLEEP      :                     IRQ 
+           PWR_CR:LPDS = 0            SystemTicker
+           PWR_CR:PDDS =0
+            WFI/WFE 
+
+DEEPSLEEP  :                     EXTI 
+STOP       PWR_CR:LPDS = 0  1        
+
+           PWR_CR:PDDS =0        BEEPER  ADC
+            CM0                      . 
+                                     .
+              SLEEPDEEP 
+            WFI/WFE              AWU timer 
+
+3.11 
+
+    12  8 
+ 114kHz  RC  RC 
+
+
+
+
+3.12 
+
+    7 
+
+
+http://wwww.hsxp-hk.com                                            21
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+   
+
+3.13 System Tick 
+
+      
+       24 
+       
+        0 
+       
+
+3.14 
+
+      HK32F030M  TIM6
+       16-bit 16-bit  up-down-up/down-count
+    CPU 
+
+3.15 
+
+      HK32F030M  1  4  TIM2
+       PWM TIM2  16
+   / 16 
+      TIM2  TIM1 
+    1  3 
+   
+
+3.16 
+
+      HK32F030M  TIM1
+      (TIM1) 6  PWM 
+   
+       
+       
+        PWM()
+       
+        PWM 
+       16  TIMx  16  PWM 
+   (0~100%) 
+    TIM 
+    TIM 
+
+3.17 AWU 
+
+   HK32F030M  AWU AWU  MCU Stop
+ MCUAWU  22-bit  1~32MHz 
+
+http://wwww.hsxp-hk.com  22
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+    114kHz  LSI  down-count 
+
+3.18 Beeper 
+
+      Beeper  7-bit  1~32MHz 
+    114kHz  LSI  down-count  124
+   8kHz 
+
+       MCU StopBeeper  ADC 
+   ADC  Beeper  1/1024 Beeper 
+    1kHz,  ADC  1kHz/1024  0.98Hz 1.02
+   
+
+http://wwww.hsxp-hk.com  23
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+3.19 I2C 
+
+    I2C I2C  7
+ 10 7  CRC /
+ SMBus V2.0/PMBus 
+
+3.20 USART
+
+ 1 /(USART1),  4MBit/s
+
+USART  CTSRTS  RS485 DE 
+
+(ISO 7816),IrDA SIR ENDEC,
+
+LIN / CPU  MCU
+
+Stop 
+
+USART 
+
+            USART /      USART1
+
+                         
+DMA                      
+
+                         
+
+                         
+
+                         
+
+                         
+
+IrDA SIR ENDEC           
+
+LIN                      
+
+ Stop                    
+
+                         
+
+ModBus                   
+
+                         
+
+                         
+
+http://wwww.hsxp-hk.com          24
+          
+
+                 Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+3.21 SPI
+
+   HK32F030M  1  SPI  16 Mbit/s 
+3  8  4  16 
+
+    I2S  SPI 
+ 162432  16  32 
+ 8  8kHz  192kHz 
+ 256 
+
+           SPI              SPI
+                            
+            CRC             
+           Rx/Tx FIFO       
+           NSS              
+           I2S              
+           TI 
+
+3.22 GPIO
+
+    GPIO ()()
+ GPIO  GPIO 
+I/O 
+ I/O 
+
+3.23 ADC
+
+      HK32F030M  ADC  HK32F03x  ADC ,
+
+      ·  6  AIN0~4  5  IOAIN5 
+
+
+      · AIN0  AIN1AIN2  AIN3  ADC
+ AIN4  BGR  ADC 
+
+      ·  12bit ADC_CFGR1.RES  0 
+
+      ·  STOP  AWD 
+
+3.23.1 ADC 
+
+           NAME  Source     EXTSEL[2:0]
+           TRG0
+           TRG1  TIM1_TRGO  000
+           TRG2  TIM1_CC4   001
+           TRG3  TIM2_TRGO  002
+           TRG4  TIM6_TRGO  003
+           TRG5  TIM1_CC1   004
+           TRG6  TIM1_CC2   005
+                 TIM1_CC3   006
+
+http://wwww.hsxp-hk.com                  25
+
+
+       Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+TRG7            IO_TRIG  007
+
+ IO_TRIG  IO  IO  MODER  AFR 
+
+ IO 
+
+3.23.2 AWD 
+
+       STOP  BEEPER  ADCADC 
+ ADC  ADC  ADC  AWD 
+AWD  EXTI 
+
+       AWD 
+ BEEPER  ADC 
+
+3.24 64Bit-UID
+
+   64 
+ 64 
+(8 )(16 )(32 )
+
+
+          ( USB )
+          
+
+               
+          
+
+3.25 
+
+    ARM  SWJ-DP 
+SWDIO  SWCLK
+
+http://wwww.hsxp-hk.com       26
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+4 
+
+4.1 
+
+   
+
+
+
+4.1.1 
+
+                                Table 4-1                                              
+  VDD-VSS                                           -0.5       4.0                      V
+                                                                                       mV
+    VIN        VDDA  VDD                          VSS-0.3  VDD+4.0
+ |VDDx|                                               -        50
+|VSSX -VSS|                                           -        50
+              
+
+4.1.2 
+
+                                      Table 4-2                
+    IVDD                                            150        mA
+     IVSS                                           150
+               VDD /VDDA 1                           25
+     IIO       V SS 1                               -25
+               I/O                                  ±5
+  IINJ(PIN)2   I/O                                 ±25
+IINJ(PIN)      3
+               I/O  4
+
+Note1VDDVDDAVSSVSSA
+
+Note2
+Note3 VIN >VDD  VIN < VSS 
+
+Note4 I/O IINJPIN
+
+
+4.1.3 
+
+                                Table 4-3                                              
+TSTG                                              ­45 to +150                          °C
+
+ TJ                                                    125
+              
+
+http://wwww.hsxp-hk.com                                        27
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+4.2 
+
+4.2.1 
+
+                         Table 4-4                                                     
+    fHCLK                                    0             32
+    fPCLK                                    0             32                          MHz
+VDD/VDDA     AHB                            1.8           3.6
+             APB                            -40            85                           V
+       T     Note1                                                                     °C
+            
+
+Note1VDD  VDDA 
+
+4.2.2 
+
+              Table 4-5 
+
+                                                                                       
+  Tdelay                                     -     40                                   us
+VThreshold  rstn                -            -    1.75                                  V
+
+                                -
+
+4.2.3 
+
+              Table 4-7 
+
+                                             
+                                           TBD 0.8 TBD V
+VREFINT                         -40~85°C
+
+4.2.4 
+
+              Table 4-8 
+
+                                -40°C     VDD=3.3V      85°C                             Unit
+                                             25°C                                      mA
+Run mode      HCLK= HSI 32MHz,  2.572                   2.704
+            FLASH  1                          2.599
+Sleep mode                      2.326
+Deep Sleep    , APB  enable     1.802     2.338         2.501                          mA
+             HCLK=HSI 32MHz,    1.097
+   Mode     FLASH  1            0.548     1.711         1.822                          mA
+Stop mode     , APB  disable              1.197
+            HCLK=LSI 114kHz       21.83                 1.477                          mA
+              HCLK= HSI 32MHz   18.02     0.613
+                                          34.08         0.728                          mA
+                APB  disable              30.12
+              HCLK= HSI 32MHz                           213.6                          uA
+                APB  disable
+            AWU + LDO                                210.44 uA
+
+                LDO 
+
+http://wwww.hsxp-hk.com                                        28
+          
+
+                 Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+4.2.5 HSI 
+
+            Table 4-9 
+
+Symbol    Parameter             Conditions         Min Typ       Max     Unit
+  fHSI                                                                   MHz
+ DuCy                           -                  -      32       -
+                                                                  55     %
+ ACC                            -                  45     -        1
+                                                                   1     %
+   Tsu                   RCC_CR  -                        -        2     us
+  IDD                                                            100     uA
+                         TA= ­40 to 85 °C -1              -
+
+                                VSSVINVDD          1      -
+          
+                                                   -      80
+
+4.2.6 LSI 
+
+            Table 4-10 
+
+Symbol       Parameter          Conditions         Min Typ       Max     Unit
+  fHSI                                                                   KHz
+ DuCy                                  -           -      114      -
+                                                                  55     %
+ ACC                                      -        45     -
+                         TA= ­40 to 85 °C                         2.2
+                                                   1.5    -
+
+Tsu                             VSSVINVDD          1      -              2 us
+
+IDD                                                -      80 100 uA
+
+4.2.7 GPIO 
+
+HK32F030M  HSECLK1/2/3/4 
+
+                              Table 4-11 GPIO 
+
+Symbol            Parameter                 Value          Unit
+  Fext
+                                Min Typ            Max    MHz
+                                                          %
+                                   1        8.0     32    ps
+                                                    60
+                                   40       -
+
+Jitter                             -        -      300
+
+4.2.8 Flash 
+
+            Table 4-12 Flash 
+
+ Symbol              Parameter  Min Typ Max                   Unit
+  TPROG                                                        µs
+                                   6           -   7.5         ms
+ TERASE                                                        ms
+                                   60       80         -      mA
+IDDPROG   /                                                   mA
+IDDERASE  @24MHz                   60       80         -      mA
+          @1MHz                                               mA
+IDDREAD                               -        -      5       
+                                                               
+  NEND                                -        -      2
+   tRET
+                                      -     2         3
+
+                                      -     0.25 0.4
+
+                                   100
+
+                                   20
+
+http://wwww.hsxp-hk.com                                          29
+       
+
+              Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+4.2.9 IO 
+
+                     Table 4-13 IO 
+
+Symbol Parameter          Conditions          Min         Ty     Max     Unit
+                                                                 TBD     V
+                                                           p             V
+                                                                   -     mV
+VIH                       VDD=3.3V TBD                             3     uA
+                                                                  50     K
+VIL                                     -0.3
+                                                                  50     K
+Vhys                                    450mV@3.3V -               -     pF
+
+                                                                   Min  Max Unit
+                                                                     -    2 MHz
+Ilkg                      VIN =3.3V -                      -         -
+                                                                        125 ns
+       weak pull-up
+
+RPU equivalent            VIN=VSS       30                40
+
+       resistor
+
+       weak pull-down
+
+RPD equivalent            VIN=VDD       30                40
+
+       resistor
+
+CIO    I/O           pin                -                  5
+
+       capacitance
+
+4.2.10 IO 
+
+                     Table 4-14 IO 
+
+Speed  Symbol        Parameter                Conditions
+Mode
+       VOL Output low level             CL=50pF, VDD=2V to 3.6V
+  10   VOH Output high level                  RLoad=5Kohm
+
+01     VOL Output low level             CL=50pF, VDD=2V to 3.6V  -      2 MHz
+
+       VOH Output high level                  RLoad=5Kohm        - 125 ns
+
+11     VOL Output low level             CL=50pF, VDD=2V to 3.6V  -      2 MHz
+
+       VOH Output high level                  RLoad=5Kohm        - 125 ns
+
+                     Table 4-15 IO 
+
+Mode   Symbol        Parameter                Conditions         Min Max Unit
+  10   fmax(IO)out
+  01                Maximum frequency                            -      2 MHz
+        tf(IO)out
+                    output high to low  CL=50pF, VDD=2V to 3.6V  - 125
+        tr(IO)out   level fall time                                                 ns
+       fmax(IO)out
+                    output low to high                           - 125
+        tf(IO)out
+                    level rise time
+
+                    Maximum frequency                            -      10 MHz
+
+                    output high to low  CL=50pF, VDD=2V to 3.6V  - 25 ns
+
+                    level fall time
+
+http://wwww.hsxp-hk.com                                                 30
+             
+
+                    Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+                output low to high                                     - 25
+    tr(IO)out level rise time
+
+    fmax(IO)out Maximum frequency CL=50pF, VDD=2.7V to 3.6V            -        50 MHz
+
+              output high to low    CL=50pF, VDD=2.7V to 3.6V -                 5 ns
+    tf(IO)out level fall time
+11
+
+              output high to low    CL=50pF, VDD=2.7V to 3.6V -                 5 ns
+    tr(IO)out level rise time
+
+4.2.11 NRST 
+
+     NRST 
+ RC 
+
+                                     Table 4-16 NRST 
+
+    Symbol              Parameter               Min        Max            Unit
+      VIL
+      VIH     NRST                                         0.8            V
+     Vhys
+     Rpull              NRST                    2                         V
+     TNoise
+              Schmitt trigger                              200            mV
+
+                                                           50             K
+
+                                                           100            ns
+
+4.2.12 TIM 
+
+              Table 4-17 TIM 
+
+     Symbol             Conditions              Min        Max           Unit
+   Tres(TIM)                                                 -         TTIMxCLK
+              Timer resolution time             1
+      FEXT
+    RESTIM       Timer external clock                      FTIMxCLK/2     MHz
+    Tcounter                                         0
+TMAX_COUNT
+              frequency on CH1 to CH4
+
+              Timer resolution                  -          16             bit
+
+                16-bit counter clock period                65536       TTIMxCLK
+                                                        1
+
+              when internal clock is selected
+
+              Maximum possible count            -          65536x65536 TTIMxCLK
+
+Notes: fTIMxCLK =48MHz
+
+4.2.13 ADC              Table 4-18 ADC 
+
+ADC                                      12Bit
+ADC                                      8Bit
+
+http://wwww.hsxp-hk.com                                                   31
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+5 
+
+5.1 
+
+              TBD
+
+5.2 
+
+              TBD
+
+http://wwww.hsxp-hk.com  32
+     
+
+            Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+6 
+
+              HK32F030M  SO8N/TSSOP16//TSSOP20 
+
+6.1 HK32F030MJ4M6-SO8N
+
+                         PD6/AIN1                                      PD5/SWDIO/AIN0
+
+                         PA1/HSECLK1     1                          8  PD3
+                                    PD4                                PD1
+
+                         PA2                                           PC6
+
+                         VSS/VSSA 2         HK32F030M               7  NRST/PA0
+                                                                       PB4
+
+               VCAP/PD7/HSECLK2 3           SO8N                          PC4/AIN2
+                        VDD/VDDA 4
+                                                                    6 PC5/HSECLK4
+
+                                                                          PC3
+                                                                          PC7
+
+                                                                          PB5/SWCLK/HSECLK3
+
+                                                                    5 PA3
+
+                                                                          PD2
+
+Pin  Pin Name            Pin TypeNote2      Pin Functions
+                         I/O                Default Function After power-on
+1.   PD6/AIN1                                                                    Default Alternate Function(AF0)
+                                            PD6 GPIO                             n/a
+
+http://wwww.hsxp-hk.com
+    
+
+           Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+    PA1/HSECLK1          I/O     PA1                               n/a
+
+    PD4                  I/O     PD4 GPIO                          I2C1_SMBA
+
+    PA2                  I/O     PA2                               I2C1_SMBA
+
+2.  VSS/VSSA             Ground  Digital ground and analogy ground is connected on chip
+
+3.  VCAP/PD7/HSECLK2 I/O         PD7                               I2C1_SMBA
+
+4.  VDD/VDDA             Power Supply Digital power and analogy power is connected on chip
+
+5.  PB5/SWCLK/HSECLK3 I/O        SWCLK after reset                 SWCLK_I2C1_SDANote1
+
+    PA3                  I/O     PA3                               n/a
+
+    PD2                  I/O     PD2                               n/a
+
+6.  PC4/AIN2             I/O     PC4                               n/a
+
+    PC5/HSECLK4          I/O     PC5                               I2C1_SDA
+
+    PC3                  I/O     PC3                               n/a
+
+    PC7                  I/O     PC7                               n/a
+
+7.  NRST/PA0             I/O     NRST                              n/a
+
+    PB4                  I/O     PB4                               I2C1_SCL
+
+8.  PD5/SWDIO/AIN0       I/O     SWDIO                             SWDIO
+
+    PD3                  I/O     PD3                               n/a
+
+    PD1                  I/O     PD1                               I2C1_SMBA
+
+    PC6                  I/O     PC6                               I2C1_SCL
+
+    Note1PB5  SWCLK  I2C1_SDA
+    Note2I = input, O=output, I/O= input/output, S= power supply
+    Note3 ADC 
+
+http://wwww.hsxp-hk.com
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+6.2 HK32F030MD4P6-TSSOP16
+
+                         PD6/AIN1    1                                                 16 PD3/AIN3
+                                PD4
+
+                         NRST/PA0 2                                                    15  PD5/SWDIO/AIN0
+                                                                                           PD1
+
+                         PA1/HSECLK1 3                                                 14 PC6
+
+                                PA2 4   HK32F030M 13 PC5/HSECLK4
+                         VSS/VSSA 5
+                                        TSSOP16                                        12  PC4/AIN2
+                                                                                           PC7
+
+     VCAP/PD7/HSECLK2 6                                                                11 PC3
+
+                         VDD/VDDA 7                                                    10 PB4
+                                 PA3 8
+                                                                                       9   PB5/SWCLK/HSECLK3
+                                   Pin TypeNote2 Pin Functions                             PD2
+
+Pin  Pin Name
+
+http://wwww.hsxp-hk.com
+     
+
+            Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+                                 Default Function After power-on Default Alternate Function(AF0)
+
+1.   PD6/AIN1            I/O     PD6 GPIO                           n/a
+
+     PD4                 I/O     PD4 GPIO                           I2C1_SMBA
+
+2.   NRST/PA0            I/O     NRST                               n/a
+
+3.   PA1/HSECLK1         I/O     PA1                                n/a
+
+4.   PA2                 I/O     PA2                                I2C1_SMBA
+
+5.   VSS/VSSA            Ground  Digital ground and analogy ground is connected on chip
+
+6.   VCAP/PD7/HSECLK2 I/O        PD7                                I2C1_SMBA
+
+7.   VDD/VDDA            Power Supply Digital power and analogy power is connected on chip
+
+8.   PA3                 I/O     PA3                                n/a
+
+9.   PB5/SWCLK/HSECLK3 I/O       SWCLK after reset                  SWCLK_I2C1_SDANote1
+
+     PD2                 I/O     PD2                                n/a
+
+10.  PB4                 I/O     PB4                                I2C1_SCL
+
+11.  PC3                 I/O     PC3                                n/a
+
+12.  PC4/AIN2            I/O     PC4                                n/a
+
+     PC7                 I/O     PC7                                n/a
+
+13.  PC5/HSECLK4         I/O     PC5                                I2C1_SDA
+
+14.  PC6                 I/O     PC6                                I2C1_SCL
+
+15.  PD5/SWDIO/AIN0      I/O     SWDIO                              SWDIO
+
+     PD1                 I/O     PD1                                I2C1_SMBA
+
+16.  PD3/AIN3            I/O     PD3                                n/a
+
+     Note1PB5  SWCLK  I2C1_SDA
+     Note2I = input, O=output, I/O= input/output, S= power supply
+     Note3 ADC 
+
+http://wwww.hsxp-hk.com
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+6.3 HK32F030MF4P6-TSSOP20
+
+                         PD4 1                                                         20 PD3/AIN3
+
+                         PD5/SWDIO/AIN0 2                                              19 PD2/AIN4
+                                  PD6/AIN1 3                                           18 PD1
+
+                         NRST 4                                                        17 PC7
+
+                         PA1//HSECLK1 5       HK32F030M 16 PC6
+                                     PA2 6
+                                              TSSOP20                                  15 PC5/HSECLK4
+
+                         VSS/VSSA 7                                                    14 PC4/AIN2
+
+                         VCAP 8                                                        13 PC3
+
+                         VDD/VDDA 9                                                    12 PB4
+
+                         PA3 10                                                        11 PB5/SWCLK/HSECLK3
+
+Pin  Pin Name            Pin TypeNote2 Pin Functions
+
+http://wwww.hsxp-hk.com
+     
+
+            Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+                                 Default Function After power-on Default Alternate Function(AF0)
+
+1.   PD4                 I/O     PD4 GPIO                           I2C1_SMBA
+
+2.   PD5/SWDIO/AIN0      I/O     SWDIO                              SWDIO
+
+3.   PD6/AIN1            I/O     PD6 GPIO                           n/a
+
+4.   NRST                I       NRST Input                         n/a
+
+5.   PA1/HSECLK1         I/O     PA1                                n/a
+
+6.   PA2                 I/O     PA2                                I2C1_SMBA
+
+7.   VSS/VSSA            Ground  Digital ground and analogy ground is connected on chip
+
+8.   VCAP                O       NC, Floating
+
+9.   VDD/VDDA            Power Supply Digital power and analogy power is connected on chip
+
+10.  PA3                 I/O     PA3                                n/a
+
+11.  PB5/SWCLK/HSECLK3 I/O       SWCLK after reset                  SWCLK_I2C1_SDANote1
+
+12.  PB4                 I/O     PB4                                I2C1_SCL
+
+13.  PC3                 I/O     PC3                                n/a
+
+14.  PC4/AIN2            I/O     PC4                                n/a
+
+15.  PC5/HSECLK4         I/O     PC5                                I2C1_SDA
+
+16.  PC6                 I/O     PC6                                I2C1_SCL
+
+17.  PC7                 I/O     PC7                                n/a
+
+18.  PD1                 I/O     PD1                                I2C1_SMBA
+
+19.  PD2/AIN4            I/O     PD2                                n/a
+
+20.  PD3/AIN3            I/O     PD3                                n/a
+
+     Note1PB5  SWCLK  I2C1_SDA
+     Note2I = input, O=output, I/O= input/output, S= power supply
+     Note3 ADC 
+
+http://wwww.hsxp-hk.com
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+6.4 HK32F030MF4U6-UFQFN20
+
+                                         20 PD6/AIN1
+                                                   19 PD5/SWDIO/AIN0
+                                                             18 PD4
+                                                                        17 PD3/AIN3
+                                                                                   16 PD2/AIN4
+
+                                 NRST 1  HK32F030M                                              15 PD1
+                         PA1/HSECLK1 2    UFQFN20                                               14 PC7
+                                                                                                13 PC6
+                                  PA2 3                                                         12 PC5/HSECLK4
+                             VSS/VSSA 4                                                         11 PC4/AIN2
+
+                                 VCAP 5
+
+                                         VDD/VDDA 6
+                                                   PA3 7
+                                                              8
+                                                                         9
+                                                                                   10
+                                                                  PC3
+                                                     PB4
+                                         PB5/SWCLK/HSECLK3
+
+http://wwww.hsxp-hk.com
+     
+
+            Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+Pin  Pin Name            Pin TypeNote2  Pin Functions
+                                        Default Function After power-on
+                                                                         Default Alternate Function(AF0)
+
+1.   NRST                I              NRST Input                       n/a
+
+2.   PA1/HSECLK1         I/O            PA1                              n/a
+
+3.   PA2                 I/O            PA2                              I2C1_SMBA
+
+4.   VSS/VSSA            Ground         Digital ground and analogy ground is connected on chip
+
+5.   VCAP                O              NC, Floating
+
+6.   VDD/VDDA            Power Supply Digital power and analogy power is connected on chip
+
+7.   PA3                 I/O            PA3                              n/a
+
+8.   PB5/SWCLK/HSECLK3 I/O              SWCLK after reset                SWCLK_I2C1_SDANote1
+
+9.   PB4                 I/O            PB4                              I2C1_SCL
+
+10.  PC3                 I/O            PC3                              n/a
+
+11.  PC4/AIN2            I/O            PC4                              n/a
+
+12.  PC5/HSECLK4         I/O            PC5                              I2C1_SDA
+
+13.  PC6                 I/O            PC6                              I2C1_SCL
+
+14.  PC7                 I/O            PC7                              n/a
+
+15.  PD1                 I/O            PD1                              I2C1_SMBA
+
+16.  PD2/AIN4            I/O            PD2                              n/a
+
+17.  PD3/AIN3            I/O            PD3                              n/a
+
+18.  PD4                 I/O            PD4 GPIO                         I2C1_SMBA
+
+19.  PD5/SWDIO/AIN0      I/O            SWDIO                            SWDIO
+
+20.  PD6/AIN1            I/O            PD6 GPIO                         n/a
+
+     Note1PB5  SWCLK  I2C1_SDA
+     Note2I = input, O=output, I/O= input/output, S= power supply
+     Note3 ADC 
+
+http://wwww.hsxp-hk.com
+     
+
+            Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+6.5 AF  SYSCFG 
+
+Pin Name AF0 (I2C1SWD) AF1 (USART1) AF2 (SPI1) AF3 (TIM1)           AF4 (TIM2) AF5 (RCC) AF6 (Beeper) AF7 (ADC1)
+
+PA0  {Reserved}  {Reserved}  {Reserved} TIM1_BKIN                   TIM2_CH3 RCC_MCO BEEP  ADC1_ETR
+
+PA1  {Reserved}  {Reserved}  {Reserved} TIM1_CH1N                   TIM2_ETR RCC_MCO BEEP  ADC1_ETR
+
+PA2  I2C1_SMBA   {Reserved}  SPI1_SCK TIM1_CH2N                     TIM2_CH4 RCC_MCO BEEP  ADC1_ETR
+
+PA3  {Reserved}  USART1_TX SPI1_NSS TIM1_CH3N                       TIM2_CH3 RCC_MCO BEEP  ADC1_ETR
+
+PB4  I2C1_SCL    USART1_RX SPI1_MISO TIM1_CH2N                      TIM2_ETR RCC_MCO BEEP  ADC1_ETR
+PB5                                                                 TIM2_CH2 RCC_MCO BEEP  ADC1_ETR
+     SWCLK_I2C1_SDA *1 USART1_RX SPI1_NSS TIM1_BKIN
+
+PC3  {Reserved}  USART1_CK {Reserved} TIM1_CH3_CH1N *1 TIM2_CH1 RCC_MCO BEEP               ADC1_ETR
+                                                                                           ADC1_ETR
+PC4  {Reserved}  {Reserved}  SPI1_MISO TIM1_CH4_CH2N *1 TIM2_CH4 RCC_MCO BEEP
+
+http://wwww.hsxp-hk.com
+     
+
+            Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+PC5  I2C1_SDA    {Reserved}  SPI1_SCK TIM1_ETR                      TIM2_CH1 RCC_MCO BEEP  ADC1_ETR
+                 {Reserved}  SPI1_MOSI TIM1_CH1                     TIM2_CH3 RCC_MCO BEEP  ADC1_ETR
+PC6  I2C1_SCL    {Reserved}  SPI1_MISO TIM1_CH2                     TIM2_ETR RCC_MCO BEEP  ADC1_ETR
+
+PC7  {Reserved}
+
+PD1  I2C1_SMBA   USART1_TX {Reserved} TIM1_CH1                      TIM2_CH4 RCC_MCO BEEP  ADC1_ETR
+                                                                                           ADC1_ETR
+PD2  {Reserved}  {Reserved}  SPI1_MOSI TIM1_CH2                     TIM2_CH3 RCC_MCO BEEP  ADC1_ETR
+                                                                                           ADC1_ETR
+PD3  {Reserved}  {Reserved}  SPI1_SCK TIM1_CH3                      TIM2_CH2 RCC_MCO BEEP  ADC1_ETR
+                                                                                           ADC1_ETR
+PD4  I2C1_SMBA   USART1_CK SPI1_MOSI TIM1_CH4                       TIM2_CH1 RCC_MCO BEEP  ADC1_ETR
+
+PD5  SWDIO       USART1_TX {Reserved} TIM1_ETR                      TIM2_ETR RCC_MCO BEEP
+
+PD6  {Reserved}  USART1_RX SPI1_MISO TIM1_CH2                       TIM2_CH2 RCC_MCO BEEP
+
+PD7  I2C1_SMBA   USART1_RX SPI1_NSS TIM1_CH3                        TIM2_CH1 RCC_MCO BEEP
+
+*1PC3  PC4  IOMUX  TIM1  CH3/CH4  CH1N/CH2N;
+      PB5  IOMUX  SWCLK  I2C1_SDA
+
+http://wwww.hsxp-hk.com
+PB5_I2C1_SEL 
+        PC4_TIM1_SEL
+                 PC3_TIM1_SEL  Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+                                    bit 2 1 0
+
+                             access rw rw rw
+                        reset value 1'b0 1'b0 1'b0
+
+               PC3_TIM1_SEL 
+                     1'b0:  PC3_AF  AF3 PC3  TIM1  CH3 
+                     1'b1:  PC3_AF  AF3 PC3  TIM1  CH1N 
+
+               PC4_TIM1_SEL 
+                     1'b0:  PC4_AF  AF3 PC3  TIM1  CH4 
+                     1'b1:  PC4_AF  AF3 PC3  TIM1  CH2N 
+
+               PB5_I2C1_SEL 
+                     1'b0:  PB5_AF  AF0 PB5  SWCLK 
+                     1'b1:  PB5_AF  AF0 PB5  I2C1  SDA 
+
+6.6 IOMUX 
+
+             TSSOP16/SO8N  HK32F030M  IOMUX  GPIO  IO 
+             8 "PD5 SYSCFG  IO" IOMUX  8 
+
+http://wwww.hsxp-hk.com
+
+
+       Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+ PD3 SYSCFG  IOPD1 SYSCFG  IO PC6 SYSCFG  IO
+      IOMUX SO8N/SOP8  18  GPIO  IO 
+
+PD6/AIN1                                       PD 5/SWD IO /AIN0
+
+PA1/HSECLK1                   1             8  PD3
+              PD4                              PD1
+
+                         PA2                   PC6
+
+            VSS/VSSA 2           HK32F030M  7  NRST/PA0
+VCAP/PD7/HSECLK2 3                   SO8N      PB4
+
+           VDD/VDDA 4                          PC4/AIN2
+
+                                            6  PC5/HSECLK4
+                                               PC3
+
+                                               PC7
+
+                                                  PB5/SWCLK/HSECLK3
+
+                                            5 PA3
+
+                                                  PD2
+
+http://wwww.hsxp-hk.com
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+7 
+
+7.1 SO8N, 4.9mmX6mm, 1.27mm pitch
+
+http://wwww.hsxp-hk.com  45
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+7.2 TSSOP16, 5.0mmX4.4mm, 0.65pitch
+
+http://wwww.hsxp-hk.com  46
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+7.3 TSSOP20, 6.5mmX4.4mm, 0.65mm pitch
+
+http://wwww.hsxp-hk.com  47
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+7.4 UFQFN20, 4mmX4mm, 0.5mm pitch
+
+http://wwww.hsxp-hk.com  48
+       
+
+              Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+8 
+
+Term   Definition
+RTC    Real time clock
+IIC    Inter-Integrated Circuit Interface
+CPU    Center process unit
+PLL    Phase lock loop
+LDO    Low voltage drop output
+RISC   Reduced Instruction-Set Computer
+UART   Universal Asynchronous Receiver Transmitter
+SPI    Serial peripheral interface
+USB    Universal Serial Bus
+GPIO   General purpose input output
+CAN    Controller Area Network
+I/O    Input output
+ADC    Analogue to digital converter
+MCU    Micro controller unit
+HSE    High-speed external
+HSI    High-speed internal
+LSE    Low-speed external
+LSI    Low-speed internal
+SAR    Successive Approximation Analog-to-Digital Converter
+USART  Universal Synchronous Asynchronous Receiver Transmitter
+PVD    Power voltage detect
+SOC    System on chip
+JTAG   Joint Test Action Group
+PWM    Pulse Width Modulation
+DMA    Direct Memory Access
+SDIO   Secure Digital Input Output
+POR    Power on reset
+PDR    Power down reset
+CRC    Cyclic Redundancy Check
+
+http://wwww.hsxp-hk.com                                         49
+             
+
+                               Shenzhen Hangshun Chip Technology Development Co.,Ltd.
+
+9 
+
+     
+
+/
+
+
+
+     
+
+
+
+     
+
+
+
+
+     
+
+
+
+ 2015 - 2020
+
+http://wwww.hsxp-hk.com  50
+
