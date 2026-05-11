@@ -519,12 +519,155 @@ Once these are answered (~30 min of capture), we have full understanding to port
 
 ---
 
-## Final Pre-Sleep TL;DR
+## Final Pre-Sleep TL;DR (SUPERSEDED — see Current Findings below)
 
 The two biggest things to remember:
 
 1. **Stock probably uses direct GPIO motor control (Method 1) not the STC8G UART (Method 2).** This means the entire "PM_GPIO4 brown wire pinmux" struggle may be unnecessary — we just need to copy the right GPIO assignments. **Verify by checking `/opt/ch/motor_ctrl_use_pwm.flag` when stock is running.**
 
 2. **VISCA at 9600 IS correct for HK32F** per phonehome report — but our tests got no response. Either HK32F isn't powered (check 3.3V on SS24 jumper) or stock has a wake/init we haven't replicated.
+
+---
+
+## CURRENT FINDINGS (2026-05) — SUPERSEDES OLD HYPOTHESES
+
+### Protocol architecture (confirmed via continuity tracing + LA captures)
+
+The HK32F lens MCU is the **CENTRAL PTZ RELAY**, not just a zoom/focus controller:
+
+```
+SoC main board                    HK32F lens MCU                  STC8G distro MCU
+    │                                  │                              │
+    │── AF protocol on R2 RED/BLACK ──▶│                              │
+    │   (115200 8N1, 20-byte frames)   │                              │
+    │   Sync: 06 66 00 60 80 66 E6 80  │                              │
+    │                                  │── 66666 baud 8N1 ───────────▶│ Pin 1 (P3.0 RxD)
+    │                                  │   white wire via Diode D3    │   (decoded
+    │                                  │   Recurring frame:           │    pattern)
+    │                                  │   "51 01 04 78 01 0D"        │
+    │                                  │                              │
+    │── PWM on J6 PWM1 ────────────────────────────────────────────────▶ PT4115 DIM (IR LED brightness)
+    │── H-bridge on J8 ────────────────────────────────────────────────▶ Sensor board IR-cut coil
+    │── ADC on J7 ─────────────────────────────────────────────────────◀── CDS sensor (via STC8G monitoring)
+```
+
+### Connector mapping (IMA80S15 reference design ↔ MC800S labels)
+
+| Datasheet | MC800S label | Function | Status |
+|:-:|:-:|---|:-:|
+| J1 | R1 (8-pin NET cable) | Ethernet + 12V + status LEDs | ✅ confirmed |
+| J2 | R2 (4-pin) | AF UART pair + GND + SPK_EN | ✅ confirmed |
+| J3 | L3 (4-pin) | Audio: GND + AUDIO_OUT + AUDIO_IN + GND | ✅ confirmed |
+| J4 | L2 (4-pin) | USB header (only GND wired on MC800S) | ✅ confirmed |
+| J5 | L1 (2-pin) | RESET (brown wire) + GND | ✅ confirmed |
+| J6 | TBD | PWM0 warm + PWM1 IR + GND | ⏳ TBD (likely T1) |
+| J7 | TBD | CDS_IN + GND | ⏳ TBD |
+| J8 | TBD | IR-CUT × 2 (H-bridge) | ⏳ TBD |
+
+### Brown wire (RESET) — fully traced
+
+```
+SoC J5 Pin 1 RESET ─→ brown wire ─→ Distro NET connector Pin 6
+                                          │
+                                          └→ Distro POE connector (white cable)
+                                                │
+                                                └→ POE board ─→ brown wire on POE board
+                                                                 │
+                                                                 └→ HARDWARE RESET BUTTON
+                                                                    (camera body pinhole)
+```
+
+### Distribution board silkscreen labels (from IMG_5746.jpeg)
+
+- **Top center NET connector**: `12V | GND | LNK | RX+ | RX- | TX+ | TX- | RST` (8 pins from SoC)
+- **Left external interface**: `RCUT | RX1 | PTZ | 485A | 485B | RST | LNK | RX± | TX±` — generic silkscreen, 485A/B NOT POPULATED on MC800S
+- **LED board connector**: `LED+ | LED- | CDS+ | CDS-`
+- **H_MOTOR connector**: `AN | AGND | AOUT | GND | 12V | RX | TX | H_MOTOR`
+- **V_MOTOR connector**: stepper for tilt
+
+### IR LED driver chain (CONFIRMED via continuity probe)
+
+```
+12V supply ─→ SS24 schottky ─→ PT4115 buck driver ─→ inductor ─→ LED+ ─→ 4× 850nm IR LEDs (series) ─→ LED- ─→ R330 (0.33Ω sense) ─→ GND
+                                    │
+                                    │ DIM pin (PWM input from SoC J6 PWM1)
+                                    │
+                                    └─ ULN2803A pin 17 (output 2C) acts as on/off switch for LED chain
+```
+
+Current driven: **0.1V / 0.33Ω = 303mA constant current** through the LED string. Verified by measured 11.7V → 5.4V across the string (= 6.3V drop / 4 LEDs ≈ 1.58V/LED at 303mA, matching 850nm IR LED I-V curve).
+
+### ULN2803A (TSSOP-18) — confirmed pin mapping
+
+```
+       ┌────────────┐
+Pin 1  │1          18│ Pin 18 ← H_MOTOR blue   (OUT 1C)
+Pin 2  │2          17│ Pin 17 ← H_MOTOR brown  (OUT 2C, also LED-)
+Pin 3  │3          16│ Pin 16 ← H_MOTOR yellow (OUT 3C)
+Pin 4  │4          15│ Pin 15 ← H_MOTOR black  (OUT 4C)
+Pin 5  │5          14│ Pin 14 ← V_MOTOR        (OUT 5C)
+Pin 6  │6          13│ Pin 13 ← V_MOTOR        (OUT 6C)
+Pin 7  │7          12│ Pin 12 ← V_MOTOR        (OUT 7C)
+Pin 8  │8          11│ Pin 11 ← V_MOTOR        (OUT 8C)
+GND    │9          10│ COMMON (motor +12V supply, also LED+ path)
+       └────────────┘
+```
+
+**Inputs 1-8 all wired to STC8G GPIOs** (confirmed via continuity probing).
+**Outputs 11-18 drive H/V stepper coils** (4 per motor).
+
+### HK32F030MF4P6 — silicon debug locked
+
+`DBG_CLK_CTL = 0x12DE` option byte gates the debug clock at silicon level.
+Confirmed unreachable via: CubeProgrammer (8 frequencies), OpenOCD HLA (3 configs).
+**No software-only path to firmware exists.**
+
+Replacement path: HK32F030MF4P6 dev boards on order ($18.99 5pcs, 8-day ship,
+Amazon). With dev boards, we can write our own AF protocol firmware and hot-air
+swap a programmed chip into the camera, defeating the lock permanently.
+
+### Captured protocol byte patterns
+
+From LA captures (LogicalRust SUMP firmware on Nucleo F411RE):
+- **D5 white wire @ 66,666 baud** decodes to clean UART frames. Recurring 6-byte
+  sequence `51 01 04 78 01 0D` appears in multiple captures. `0D` likely frame
+  delimiter. Full sequence example:
+  ```
+  00 0D 51 01 04 78 01 0D 00 E2 00 42 0A 00 03 00 00 0D
+  ```
+- **D4 black (AF command SoC→HK32F) and D3 yellow** showed activity in some
+  captures, no activity in others. Need multi-action diff campaign to decode.
+- **D6 red wire dead** — wire connection issue, needs verification before
+  proceeding with AF telemetry decode.
+
+### IR LED upgrade plan (940nm covert)
+
+Ordered: 940nm 3W IR LEDs, 300-700mA, 1.2-1.6V V_f, 3535 form factor.
+
+Drop-in compatibility:
+- Direct swap works at existing R330 (303mA) — but ~50% brightness of original
+  850nm (sensor efficiency drops at 940nm).
+- For brightness recovery:
+  - **R220 (0.22Ω)** → 454mA, ~75% baseline brightness
+  - **R150 (0.15Ω)** → 666mA, ~100% baseline brightness (recommended with new IR board thermal pad)
+
+Upgrade to 6 LEDs in series:
+- With R330 (303mA): comfortable headroom (3.5V), +50% total IR output
+- With R220 (454mA): tight headroom (2.9V), workable
+- With R150 (666mA): marginal headroom (2.1V), NOT recommended
+
+### Phase status
+
+| Phase | Status | Blocking |
+|---|:-:|---|
+| Phase 0 — Hardware mapping | ✅ done | — |
+| Phase 1 — Method 1/2 determination | ✅ Method 2 confirmed via trace work | — |
+| Phase 2a — AF protocol diff campaign (R2 RED/BLACK) | 🚧 partial captures; need D6 fix + multi-action runs | D6 red wire connectivity |
+| Phase 2b — Pelco-D-style white wire capture | 🚧 single captures done at 66666 baud; need diff campaign | — |
+| Phase 3 — IR LED PWM path identification | ⏳ pending | Camera-on probe of T1 pin 3 during night mode |
+| Phase 4 — Protocol byte-mapping + CRC decode | ⏳ pending | More captures with known triggers |
+| Phase 5 — OpenIPC mc800s-ptzd daemon | ⏳ pending | Phase 4 output |
+| Phase 6 — End-to-end PTZ verification | ⏳ pending | Phase 5 output |
+| Phase 7c — Chip swap fallback | ⏳ Plan B if protocol can't be cleanly replayed | Dev boards arriving (8 days) |
 
 The path forward: brief stock-boot capture session via CH341A flash + USB-serial probes will resolve both unknowns in <30 min. Way more efficient than continued blind RE.
