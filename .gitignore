@@ -14,8 +14,7 @@ __pycache__/
 # --- Cloned external sources (recreate via git clone if needed) ---
 nucleo_la/blackpill_source/
 nucleo_la/source/
-nucleo_la/logicalrust/.git/
-nucleo_la/logicalrust/target/
+nucleo_la/logicalrust/
 
 # --- Downloaded binaries / installers ---
 nucleo_la/openocd.zip
