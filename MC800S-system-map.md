@@ -369,6 +369,59 @@ Connectors:
 | 2p | 2-pin | yellow, white |
 | 2p | 2-pin | black, red |
 
+### Stock illuminator
+4× 850 nm SMD IR LEDs driven by PT4115 on the distro board, sense resistor
+R330 (0.33 Ω) → ~300 mA constant current, ~1–1.5 W input total.
+
+### Planned modification: 940 nm covert IR (FY-TH6 donor)
+Replace stock 850 nm SMDs with 6× 940 nm 3 W-class IR LEDs (Vf 1.2–1.6 V,
+Imax 700 mA) salvaged from an FY-TH6 rectangular illuminator board.
+
+**Why 940 nm needs more power:** IMX415 responsivity at 940 nm is ~40–50% of
+850 nm, so ~2× the radiant flux is needed to match stock perceived range.
+
+**Electrical (target operating point):**
+- All 6 LEDs in series: ~9.0 V string drop @ 625 mA (Vf ~1.5 V each)
+- Working sense resistor: **R160 (0.16 Ω)** → 625 mA, ~5.6 W input, ~1.6 W radiant
+- PT4115 headroom @ R160: 12 V − 9.0 V − 0.1 V = 2.9 V ✅
+- ~89% of LED Imax — good light output with adequate thermal margin
+- Single string = no parallel current-balancing concerns
+
+**Bring-up sequence (do NOT install R160 first):**
+1. Install **R200 (0.2 Ω)** → 500 mA, ~4.2 W input. Run 30 min @ 25 °C ambient.
+2. Measure chassis temperature near the LED bezel:
+   - Chassis ≤ 50 °C → safe to swap up to R160 (625 mA)
+   - Chassis 50–60 °C → stay at R200, or improve thermal bonding first
+   - Chassis ≥ 60 °C → thermal bonding inadequate; rework before increasing current
+3. R150 (0.15 Ω, 667 mA) only after R160 has been verified thermally stable —
+   gains ~6% more light for 27% less per-LED thermal headroom, marginal.
+
+PT4115 V_ref tolerance is ±5%, so actual current at R160 will land 594–656 mA
+in practice. Stays under Imax in all cases.
+
+**Mechanical:**
+- FY-TH6 board is rectangular; MC800S IR ring is circular around the lens
+- Cut the FY-TH6 board into 3 strips of 2 LEDs each (carbide blade or
+  jeweler's saw — not a Dremel cutoff disc — to keep the kerf clean)
+- Bond each strip to the MC800S LED bezel/chassis with thermal epoxy
+  (Arctic Alumina or equivalent, 1–3 W/m·K) — the chassis is the real
+  heatsink; the strip aluminum is only a thermal coupler
+- Series-wire the 3 strips with short 22 AWG silicone leads
+
+**Pre-flight verification (must do before assembly):**
+1. **IR-cut filter passband at 940 nm.** Some dichroic filters cut off
+   around 900 nm. With the IR-cut "open" (night mode), shine a known
+   940 nm source at the assembled sensor and check live image. If dark,
+   the filter blocks 940 — would need filter replacement, not just LED swap.
+2. **Lens AR coating at 940 nm.** Long-zoom lenses occasionally have
+   visible-only AR coatings that attenuate 940. Same test as above
+   verifies end-to-end.
+3. **Day/night transition still works.** CDS sensor on the IR LED board
+   reports to STC8G; behavior shouldn't change since the CDS itself is
+   unchanged. But 940 nm being invisible means visual confirmation of
+   "LEDs are on" is impossible — plan to expose the PT4115 EN line or
+   monitor 12 V rail current draw to confirm.
+
 ---
 
 ## Stock Firmware UART Configuration (CONFIRMED)
