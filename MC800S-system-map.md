@@ -642,7 +642,20 @@ From LA captures (LogicalRust SUMP firmware on Nucleo F411RE):
 
 ### IR LED upgrade plan (940nm covert)
 
-Ordered: 940nm 3W IR LEDs, 300-700mA, 1.2-1.6V V_f, 3535 form factor.
+Ordered: 940nm 3W IR LEDs, 400-700mA, 1.1-1.5V V_f (measured), 3535 SMD with thermal pad.
+
+**Bench-measured I-V curve (single-die confirmed, 2026-05-14):**
+
+| Current | V_f | Per-LED power |
+|---|:-:|:-:|
+| 50mA | 1.13V | 0.057W |
+| 100mA | 1.17V | 0.117W |
+| 200mA | 1.24V | 0.248W |
+| 300mA | 1.31V | 0.393W |
+| 400mA | 1.35V | 0.540W |
+| 500mA | 1.39V | 0.695W |
+| 600mA | 1.44V | 0.864W |
+| 700mA | 1.50V | 1.05W |
 
 Drop-in compatibility:
 - Direct swap works at existing R330 (303mA) — but ~50% brightness of original
