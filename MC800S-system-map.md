@@ -592,6 +592,98 @@ The two biggest things to remember:
 
 ---
 
+## 🔥🔥🔥🔥🔥🔥🔥 BREAKTHROUGH 2026-05-16 (#7) — B15 = DIRECTION BYTE + OPCODE HYPOTHESIS REVISION
+
+Batch of 13 isolated single-action captures (panL, panR, tiltU, tiltD, multiple
+speed variations, zoom variants, iris) decoded.  User confirmed no probe changes
+between batches.
+
+### B15 is the direction encoding byte ✅
+
+The 0x98-dominant frames in this batch cleanly differentiate direction via B15:
+
+| Capture | B15=0x06 count | B15=0x60 count | Interpretation |
+|---|---|---|---|
+| panL | 104 (33%) | 1 (0%) | **0x06 = LEFT** |
+| panR | 7 (2%) | 57 (18%) | **0x60 = RIGHT** |
+| tiltU | 168 (54%) | 0 (0%) | **0x06 = UP** |
+| tiltD | 18 (6%) | 56 (18%) | **0x60 = DOWN** |
+
+Same encoding values used for both pan and tilt axes.  This is what the daemon
+will set when issuing motor commands.
+
+### B14 also contributes to direction encoding (secondary axis)
+
+| Capture | Top B14 values | Pattern |
+|---|---|---|
+| panL | 0x66 (33%), 0x98 (15%), 0x60 (13%) | 0x66 = LEFT (with 0x98 marker) |
+| panR | 0x60 (18%), 0x00 (14%), 0x66 (12%) | 0x60 = RIGHT |
+| tiltU | 0x60 (33%), 0x98 (19%), 0x66 (15%) | 0x60 = UP (different from pan!) |
+| tiltD | 0x06 (17%), 0x60 (15%), 0x00 (13%) | mixed |
+
+Note: B14 = 0x60 means "UP" for tilt but "RIGHT" for pan.  B15 is the cleaner
+direction encoding (consistent value across axes).
+
+### OPCODE HYPOTHESIS REVISION
+
+The previous batch led to "B8 = subsystem opcode" — pan/tilt=0x86, zoom=0x60,
+iris=0x1E, focus=0x9E.  That worked for the long sustained captures (utd, dlr,
+iris0004/5) but **fails for shorter isolated captures** in this new batch.
+
+Observations that broke the prior theory:
+
+| Earlier capture | Length | Dominant B8 | New capture (same action) | Length | Dominant B8 |
+|---|---|---|---|---|---|
+| utd_tilt (tilt up+down) | 43 s | 100% 0x86 | TiltU0003 | ~6 s | 78% 0x98 |
+| dlr_pan_tilt (pan+tilt) | 43 s | 100% 0x86 | panL0001 | ~6 s | 52% 0x98 |
+| iris0004 (iris only) | ~8 s | 100% 0x1E | IrisSpeed100013 | ~6 s | 76% 0x98 |
+
+With user confirming **no probe changes**, the cause must be one of:
+1. **Different command-issue mechanism** (web UI continuous PTZ vs single-step API call)
+2. **Camera mode / firmware state difference**
+3. **B8 actually encodes motor PHASE, not subsystem** — with the previous "100% 0x86"
+   being just the "sustained motion" phase
+
+**Revised opcode interpretation** (hypothesis #2):
+
+| B8 | Likely phase / type | When dominant |
+|---|---|---|
+| 0x80 | Idle / no-op | When motor is stopped |
+| 0x86 | Sustained-motion telemetry | Long held actions (utd, dlr captures) |
+| 0x98 | Transition / brief-action status | Short isolated captures, transitions |
+| 0x9E | Position-update / completion phase | Action ending; also focus motor |
+| 0x60 | Zoom-specific phase | Zoom captures specifically (still distinct) |
+| 0x1E | Iris-specific phase OR command-start | Iris adjustments |
+| 0x66, 0x78, 0x7E | Other sub-states | Transitions |
+
+Zoom remains distinct (0x60 still dominant in zoom captures), so zoom has its
+own opcode family.  Pan/tilt/focus/iris may share opcodes that vary by phase.
+
+The cleanest direction encoding (B15) is more useful for the daemon than B8 anyway.
+
+### Focus NEAR vs Focus FAR (user clarification)
+
+User clarified focus0002 and focus0003 from prior batch were two different focus
+actions: one near, one far.
+
+| Capture | Dominant B8 | Interpretation |
+|---|---|---|
+| focus0002 | 0x9E (45%) + 0x1E (36%) | **Focus NEAR** — lens travels significantly, requires iris compensation for depth-of-field at close range |
+| focus0003 | 0x1E (49%) + others | **Focus FAR** — lens already near infinity, minimal motor travel; iris adjusts more for far-scene exposure |
+
+The 0x9E vs 0x1E split is a function of HOW MUCH the focus motor needs to move
+relative to the iris.  Both ARE focus actions; the direction determines the
+opcode emphasis.
+
+### Speed encoding (TBD)
+
+Captures named "PanSpeed10005" through "tiltSpeed10009" suggest the user tested
+different motor speeds.  B14 values shift between captures but the exact speed
+encoding byte hasn't been isolated yet.  Need to know the user's speed values
+mapped to each filename to correlate.
+
+---
+
 ## 🔥🔥🔥🔥🔥🔥 BREAKTHROUGH 2026-05-16 (#6) — IRIS = 0x1E, FOCUS = 0x9E
 
 Batch of 9 isolated single-action captures decoded (3× focus, 2× iris, 4× zoom+AF):
