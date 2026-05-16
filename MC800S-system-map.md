@@ -592,6 +592,88 @@ The two biggest things to remember:
 
 ---
 
+## 🔥🔥🔥🔥🔥 BREAKTHROUGH 2026-05-16 (#5) — ZOOM CLICK vs HOLD STRUCTURALLY DIFFERENT
+
+`zoominclick.csv` (10.5-s isolated zoom-in single click, Raw Events, 194 frames)
+vs `zoominhold.csv` (12-s held zoom, 239 frames) reveals **click and hold use
+different opcodes**, not just different frame counts:
+
+### Opcode distribution
+
+| B8 | zoom HOLD | zoom CLICK | Inferred role |
+|---|---|---|---|
+| **0x60** | 168 (70%) | 22 (11%) | Zoom motor active (sustained or pulse) |
+| **0x1E** | 40 (17%) | 0 | Command start / motor enable (HOLD only) |
+| **0x78** | 3 (1%) | **74 (38%)** | **Motor decelerating / coast-down** |
+| **0x7E** | 0 | **46 (24%)** | **Motor settling state** |
+| 0x80 | 1 | 25 (13%) | Idle / motor stopped |
+| 0x66 | 1 | 20 (10%) | Sub-state during transition |
+| 0x86 | 26 (11%) | 2 (1%) | Pan/tilt (probably AF-triggered) |
+
+**Click action sequence (inferred from opcode timeline)**:
+1. Send brief 0x60 burst (22 frames) — the actual "move zoom one step" command
+2. Switch to 0x78 (decel) — 74 frames of coast-down telemetry
+3. Settle through 0x7E (46) → 0x80 (idle, 25) → done
+
+**Hold action sequence**:
+1. Send 0x1E init frames (40)
+2. Send continuous 0x60 motor commands (168) while button is held
+3. (Capture ended while button was still held — no decel phase visible)
+
+### Press-type sub-opcode (B9)
+
+Comparing 0x60 (zoom) frames between HOLD and CLICK:
+
+```
+HOLD,  B8=0x60:  ... | 60 80 9E 00 FE 98 66 00 1E 00 00 00
+                        ^^ B9=0x80
+CLICK, B8=0x60:  ... | 60 00 06 60 18 00 00 1E 00 00 E0 06
+                        ^^ B9=0x00
+```
+
+**B9 distinguishes press type**:
+- **B9 = 0x80**: continuous-drive sub-opcode (hold)
+- **B9 = 0x00**: single-step sub-opcode (click)
+
+This is independent of B8 (the subsystem opcode), so the encoding pattern is:
+- `B8 = subsystem` (pan/tilt vs zoom vs focus)
+- `B9 = press type` (continuous hold vs single click)
+- `B10–B19` = direction / speed / position
+
+This needs verification against pan/tilt isolated click/hold captures (in flight —
+user will re-export the 4 tilt captures as Raw Events).
+
+### New zoom-click bytes appearing (B17 in particular)
+
+B17 in zoom-CLICK has 6 unique values {0x00, 0x06, 0x18, 0x1E, 0x66, 0x80} —
+much more variance than HOLD ({0x00, 0x1E}).  Likely encodes the click-progression
+state (start/move/decel/settle).
+
+### Refined transmit-side daemon design
+
+```
+def tx_zoom_click(direction):
+    # Pulse: brief 0x60 with B9=0x00, then 0x78 decel, then 0x80 idle
+    send_frame(opcode=0x60, sub=0x00, dir=direction, count=N_pulse)
+    send_frame(opcode=0x78, ...)   # automatic? or commanded?
+    send_frame(opcode=0x80, ...)
+
+def tx_zoom_hold(direction):
+    # Continuous: 0x1E init, then sustained 0x60 with B9=0x80 while held
+    send_frame(opcode=0x1E, ...)
+    while button_held:
+        send_frame(opcode=0x60, sub=0x80, dir=direction)
+    # Decel sequence sent automatically by HK32F? Or daemon needs to send it?
+```
+
+The "automatic" question — whether the HK32F auto-generates the decel sequence
+when the SoC stops sending 0x60 frames, or whether the SoC must explicitly send
+0x78/0x7E/0x80 — is critical for the daemon and TBD.  Best test: when the
+daemon is built, try one approach first; if motor doesn't decelerate gracefully,
+add the explicit decel sequence.
+
+---
+
 ## 🔥🔥🔥🔥 BREAKTHROUGH 2026-05-16 (#4) — ZOOM USES OPCODE 0x60, NOT 0x86
 
 `zoominhold.csv` (12-s isolated zoom-in-hold capture, 239 AF frames decoded) reveals

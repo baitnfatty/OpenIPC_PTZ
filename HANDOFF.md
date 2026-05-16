@@ -1,6 +1,6 @@
 # MC800S PTZ Reverse-Engineering — Handoff Document
 
-**Last updated:** 2026-05-16 (zoom opcode 0x60 discovered)
+**Last updated:** 2026-05-16 (zoom click vs hold distinguished; new opcodes 0x78/0x7E found)
 **Project:** Reverse-engineer the JideTech MC800S PTZ camera so OpenIPC can drive
 zoom, focus, pan, tilt, IR LEDs, and the IR-cut filter without the stock proprietary
 firmware.
@@ -167,12 +167,21 @@ The AF UART (R2 RED/BLACK, 115200 8N1) carries 20-byte frames:
 
 | B8 | When seen | Inferred role |
 |---|---|---|
-| 0x80 | Boot phases 1-4 (idle middle of full capture) | **Idle heartbeat** |
+| 0x80 | Boot idle, zoom-click 13% | **Idle heartbeat / motor-stopped** |
 | 0x86 | utd 100%, dlr 100%, zoom 11% | **Pan/tilt motor command** |
-| **0x60** | **zoom-in-hold 70%** *(new 2026-05-16)* | **Zoom motor command** |
-| 0x1E | Boot init (frames 0-1), zoom 17% | Command start / motor enable / init |
+| 0x60 | zoom-in-HOLD 70%, zoom-in-CLICK 11% | **Zoom motor command (sustained drive)** |
+| **0x78** | **zoom-click 38%** *(new 2026-05-16)* | **Motor decelerating / coast-down** (dominant during click follow-through) |
+| **0x7E** | **zoom-click 24%** *(new 2026-05-16)* | **Motor settling state** (related to 0x78) |
+| 0x1E | Boot init, zoom-HOLD 17%, zoom-CLICK 0% | Command start / motor enable / init |
 | 0x18 | Home seek loop | Boot motor command |
-| 0x06, 0x00, 0xE0, 0xE6, 0xF8, 0x66, 0x78, 0x9E, etc. | Boot home-seek phase | Specific sub-commands |
+| 0x06, 0x00, 0xE0, 0xE6, 0xF8, 0x66, 0x9E, etc. | Boot home-seek phase, rare in motion | Specific sub-commands |
+
+**B9 sub-opcode encodes press type for zoom**:
+- **B9 = 0x80** in HOLD's 0x60 frames → continuous-drive sub-opcode
+- **B9 = 0x00** in CLICK's 0x60 frames → single-step sub-opcode
+
+(May also apply to pan/tilt opcode-0x86 frames — to be verified once isolated
+tilt click/hold captures arrive as Raw Events.)
 
 **For opcode 0x86 frames**:
 - B8 = 0x86 (opcode)
@@ -397,7 +406,8 @@ most recent change is always at the top of the log.
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-05-16 | **Zoom opcode 0x60 discovered** — `zoominhold.csv` decode shows zoom uses a different opcode than pan/tilt (0x86). Opcode dictionary expanded in Section 2.5 + system map breakthrough #4. New tool `wf_rawdata_uart.py` added for streaming Raw Data format. | *(this commit)* |
+| 2026-05-16 | **Zoom click vs hold structurally different** — `zoominclick.csv` shows click introduces opcodes 0x78 (decel) and 0x7E (settle); HOLD is sustained 0x60, CLICK is brief 0x60 burst bracketed by 0x78/0x7E. Also: B9=0x80 (hold) vs B9=0x00 (click) on 0x60 frames suggests B9 is the press-type sub-opcode. | *(this commit)* |
+| 2026-05-16 | **Zoom opcode 0x60 discovered** — `zoominhold.csv` decode shows zoom uses a different opcode than pan/tilt (0x86). Opcode dictionary expanded in Section 2.5 + system map breakthrough #4. New tool `wf_rawdata_uart.py` added for streaming Raw Data format. | [`574bb22`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/574bb22) |
 | 2026-05-16 | Added Section 0 (amendment process) and Section 10 (this change log); created CLAUDE.md with project-wide rules for keeping HANDOFF.md current across sessions | [`1f6c7f4`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/1f6c7f4) |
 | 2026-05-16 | Initial HANDOFF.md creation — captured project state through opcode 0x86 mapping, white-wire 9600 ASCII discovery, and the two single-action captures (`utd`, `dlr`) | [`abe16fa`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/abe16fa) |
 
