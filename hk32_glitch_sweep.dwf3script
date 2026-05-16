@@ -1,0 +1,156 @@
+// hk32_glitch_sweep.dwf3script
+// WaveForms scripting language for AD3 voltage-glitch attack on HK32F030MF4P6.
+//
+// Goal: enable SWD debug interface by injecting a precisely-timed VDD brownout
+// during the HK32F's boot sequence, when the lock-check fuse is being read.
+// On success, the chip will respond to SWD IDCODE read with the Cortex-M0
+// IDCODE 0x0BB11477 (or similar).
+//
+// HARDWARE SETUP:
+//   AD3 W1 OUT  -> P-channel MOSFET gate (pulls high to disable supply briefly)
+//                  Use AO3401 or similar fast P-MOS; gate pull-up to source
+//   AD3 Scope1+ -> HK32F VDD pin (monitor actual brownout depth)
+//   AD3 Scope1- -> GND
+//   AD3 DIO 0   -> HK32F NRST pin (trigger source on rising edge)
+//   AD3 DIO 1   -> HK32F SWDIO   (will be used for IDCODE read after glitch)
+//   AD3 DIO 2   -> HK32F SWCLK
+//   AD3 GND     -> HK32F GND
+//
+//   Remove decoupling caps near HK32F VDD pin to allow glitch to register.
+//   Hot-air lift the HK32F VDD pin from the camera board and insert MOSFET
+//   in series with original supply (or, cleaner: pull the chip and put on
+//   breakout board with controlled supply).
+//
+// PARAMETERS TO SWEEP:
+//   delay        — time from NRST rising edge to glitch (1 us ... 1000 us)
+//   width        — glitch pulse duration (50 ns ... 2000 ns)
+//
+// Tested STM32F0-family chips typically glitch successfully at:
+//   delay ~ 5-50 us from NRST rising
+//   width ~ 150-500 ns
+//   depth ~ full VDD drop (~3.3V to ~0V)
+//
+// HK32F clones may differ.  Start with a wide grid sweep, then narrow once
+// you see partial responses.
+
+// ---- Configuration ----
+const DELAY_MIN_NS    = 1000;       // 1 µs from NRST rising
+const DELAY_MAX_NS    = 100000;     // 100 µs (extend if no luck)
+const DELAY_STEP_NS   = 100;        // 100 ns step (fine-grain)
+
+const WIDTH_MIN_NS    = 100;        // 100 ns minimum glitch
+const WIDTH_MAX_NS    = 1000;       // 1 µs maximum
+const WIDTH_STEP_NS   = 50;         // 50 ns step
+
+const ATTEMPTS_PER_PARAM = 1;       // can increase for statistical confidence
+
+// ---- Helpers ----
+
+function setupGlitchPulse(delay_ns, width_ns) {
+    // Configure W1 as a pulse generator
+    // Idle state = LOW (P-MOS gate held low = MOSFET ON = supply connected)
+    // Pulse goes HIGH for `width_ns` (turns MOSFET OFF = glitch)
+    // Pulse fires `delay_ns` after the trigger event (NRST rising on DIO 0)
+    Wavegen1.Channel1.Mode.text = "Custom";
+    Wavegen1.Channel1.Wave.Amplitude.value = 1.65;   // 3.3 V pp
+    Wavegen1.Channel1.Wave.Offset.value    = 1.65;   // centered so output is 0 → 3.3 V
+    Wavegen1.Channel1.Wave.Frequency.value = 1;      // single-shot
+    // Construct a custom waveform: idle low, then 0->3.3 spike, then back to 0
+    // (Details depend on WaveForms scripting API specifics — adjust per
+    // current AD3 firmware version)
+    // ...
+}
+
+function pulseReset() {
+    // Briefly drive NRST low via DIO 3 (or via Vcc cycle if NRST not wired)
+    Patterns.Channel(3).Function.text = "Pulse";
+    Patterns.Channel(3).Phase.value = 0;
+    Patterns.Channel(3).Pulse.value = 50000;   // 50 µs reset assertion
+    Patterns.run();
+    wait(100);  // 100 ms for chip to settle after release
+}
+
+function attemptIdcodeRead() {
+    // Pre-built SWD ID code request: 8-bit header byte 0xA5
+    // Then 32 bits of response on SWDIO (driven by chip if alive)
+    //
+    // This is a SIMPLIFIED stub — real implementation would:
+    //   1. Configure DIO 2 (SWCLK) as output pattern
+    //   2. Configure DIO 1 (SWDIO) as bidirectional
+    //   3. Send SWD reset sequence (50 cycles of 1)
+    //   4. Send JTAG-to-SWD switch sequence (0xE79E)
+    //   5. Send IDCODE read header (0xA5 = read DP[0])
+    //   6. Read 32 bits of response
+    //   7. Return the IDCODE
+    //
+    // For now, just return 0xFFFFFFFF = no response.
+    // Substitute with real SWD bit-banging once topology is verified.
+    return 0xFFFFFFFF;
+}
+
+function logResult(delay_ns, width_ns, idcode) {
+    print("delay=" + delay_ns + "ns  width=" + width_ns + "ns  idcode=0x" + idcode.toString(16));
+}
+
+// ---- Main sweep ----
+function main() {
+    print("HK32F glitch sweep starting...");
+    print("Delay range: " + DELAY_MIN_NS + " to " + DELAY_MAX_NS + " ns");
+    print("Width range: " + WIDTH_MIN_NS + " to " + WIDTH_MAX_NS + " ns");
+    print("Total iterations: " +
+          ((DELAY_MAX_NS - DELAY_MIN_NS) / DELAY_STEP_NS) *
+          ((WIDTH_MAX_NS - WIDTH_MIN_NS) / WIDTH_STEP_NS) *
+          ATTEMPTS_PER_PARAM);
+
+    let successes = 0;
+    let total = 0;
+
+    for (let delay = DELAY_MIN_NS; delay < DELAY_MAX_NS; delay += DELAY_STEP_NS) {
+        for (let width = WIDTH_MIN_NS; width < WIDTH_MAX_NS; width += WIDTH_STEP_NS) {
+            for (let attempt = 0; attempt < ATTEMPTS_PER_PARAM; attempt++) {
+                total++;
+
+                // 1. Reset the target
+                pulseReset();
+
+                // 2. Configure the glitch waveform
+                setupGlitchPulse(delay, width);
+
+                // 3. Arm the trigger on DIO 0 rising edge (NRST released)
+                Patterns.Trigger.text = "Channel";
+                Patterns.Trigger.Channel.text = "DIO 0";
+                Patterns.Trigger.Condition.text = "Rising";
+                Patterns.run();
+
+                // 4. Wait long enough for boot to complete and glitch to fire
+                wait(50);  // 50 ms
+
+                // 5. Try to read the IDCODE
+                const idcode = attemptIdcodeRead();
+
+                logResult(delay, width, idcode);
+
+                // 6. Check for success
+                if (idcode != 0xFFFFFFFF && idcode != 0x00000000) {
+                    successes++;
+                    print("*** GLITCH SUCCESS *** delay=" + delay +
+                          " width=" + width + " idcode=0x" + idcode.toString(16));
+
+                    // Optional: save the supply-rail trace from Scope 1
+                    Scope1.Export("glitch_success_d" + delay + "_w" + width + ".csv");
+
+                    // Optional: stop on first success and break to manual flash dump
+                    // return;
+                }
+
+                if (total % 100 == 0) {
+                    print("Progress: " + total + " attempts, " + successes + " successes");
+                }
+            }
+        }
+    }
+
+    print("Sweep complete. Total: " + total + ", Successes: " + successes);
+}
+
+main();

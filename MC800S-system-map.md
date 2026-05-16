@@ -1217,7 +1217,7 @@ GND    │9          10│ COMMON (motor +12V supply, also LED+ path)
 **Inputs 1-8 all wired to STC8G GPIOs** (confirmed via continuity probing).
 **Outputs 11-18 drive H/V stepper coils** (4 per motor).
 
-### HK32F030MF4P6 — silicon debug locked
+### HK32F030MF4P6 — silicon debug locked (re-evaluation 2026-05-16)
 
 `DBG_CLK_CTL = 0x12DE` option byte gates the debug clock at silicon level.
 Confirmed unreachable via: CubeProgrammer (8 frequencies), OpenOCD HLA (3 configs).
@@ -1226,6 +1226,35 @@ Confirmed unreachable via: CubeProgrammer (8 frequencies), OpenOCD HLA (3 config
 Replacement path: HK32F030MF4P6 dev boards on order ($18.99 5pcs, 8-day ship,
 Amazon). With dev boards, we can write our own AF protocol firmware and hot-air
 swap a programmed chip into the camera, defeating the lock permanently.
+
+#### Side-channel attack paths (new 2026-05-16)
+
+User reported that another Claude session confirmed **voltage glitching this exact
+chip with AD3 + MOSFET has been demonstrated**.  Three attack paths now worth
+pursuing in priority order:
+
+1. **Verify lock with AD3** (30 min, free):
+   - AD3 DIO on SWDIO/SWCLK/NRST during CubeProgrammer connection attempt
+   - Look for any SWD response.  Silicon lock = no response at all.
+   - Definitive answer rather than relying on indirect CubeProgrammer error.
+
+2. **ROM bootloader probe** (1 hour, free):
+   - HK32F030 inherits STM32F030 ROM bootloader at `0x1FFFEC00`.
+   - Pull BOOT0 high + brief reset, then send `0x7F` to USART1 at 115200 8E1.
+   - If ACK `0x79` comes back, bootloader is reachable.  Try `Read Memory`
+     command — may bypass the app-level lock entirely.
+
+3. **AD3 + MOSFET voltage glitch** (multi-hour, hardware needed):
+   - P-channel MOSFET in series with HK32F VDD, gate driven by AD3 W1
+   - Sweep glitch delay (1 µs to 1 ms post-reset), width (50 ns to 2 µs)
+   - After each glitch, read SWD IDCODE.  Valid Cortex-M0 IDCODE = success.
+   - Hardware needs: P-MOSFET (AO3401 / FDV301N), 0.1Ω shunt for power profile,
+     wire/solder for in-circuit VDD modification, removal of decoupling caps.
+   - Full sweep ~1 hour at ~50 ms per glitch attempt.
+
+If any path succeeds, dump flash with `dump_image hk32_flash.bin 0x08000000 0x4000`
+(16 KB total).  Firmware extraction would let us validate the protocol decode
+against the actual command-handling code rather than inferring from captures.
 
 ### Captured protocol byte patterns
 
