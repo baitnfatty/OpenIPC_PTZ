@@ -11,11 +11,20 @@ Output: for each <input.bin>, writes <input.csv> alongside it with one row per f
 Also writes <input>.summary.txt with stats:
     total bytes, total frames found, percent-aligned, state byte distribution.
 
-Frame structure (hypothesis from prior analysis — refined as we go):
-    Offset  0-7   : sync header `06 66 00 60 80 66 E6 80`
-    Offset  8     : state byte (0xFE idle / 0xE6 active)
-    Offset  9-13  : marker `06 00 1E 00 00`
-    Offset  14-19 : payload (command + arguments + likely CRC)
+Frame structure (refined 2026-05-15 from hk32115200_red.csv — 2937 frames @ 95% alignment):
+    Offset  0-7   : sync header `06 66 00 60 80 66 E6 80`                  (constant)
+    Offset  8     : state/command byte — observed 0x06 (89%) or 0x00 (11%)  (NOT 0xFE/0xE6 as previously guessed)
+    Offset  9-13  : high-variance payload (action data, motor speed etc.)
+    Offset  14-17 : low-variance sub-header / modifier
+                       B14: {0x00, 0x06, 0x80, 0x98}
+                       B15: {0x00, 0x1E, 0x80}
+                       B16: {0x00, 0x1E}
+                       B17: {0x00, 0x1E}
+    Offset  18-19 : high-variance — likely CRC / checksum
+
+The prior "marker `06 00 1E 00 00`" hypothesis at offset 9-13 was DISPROVEN by
+the historical capture (0/2937 frames match).  The marker_intact field in the
+CSV output is kept for backward compat but always reports 0.
 
 If your capture's actual frame size is different from 20, change FRAME_LEN below.
 """

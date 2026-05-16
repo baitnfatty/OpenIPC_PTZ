@@ -31,6 +31,22 @@ nucleo_la/openocd.zip
 # *.sr
 # *.bin
 
+# --- Experimental baud-sweep outputs (regeneratable, not worth committing)
+ev_b*_*.bin
+ev_b*_*.csv
+ev_b*_*.summary.txt
+utd_b9_*.bin
+utd_b0_*.bin
+utd_b1_19200.bin
+utd_b1_38400.bin
+utd_b1_9600.bin
+white_capture2.*
+dlr_b9_*.bin
+cap*_white_9600.bin
+
+# --- Claude worktree scratch
+.claude/worktrees/
+
 # --- OS / editor ---
 .DS_Store
 Thumbs.db

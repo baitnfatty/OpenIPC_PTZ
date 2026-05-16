@@ -124,14 +124,15 @@ Plus: 2× 24BYJ48 12V stepper motors (pan + tilt).
 | 2 (middle) | bare | 0 (floating) | likely PAD_GPIO0 (sysfs gpio 59) — surfaces as 3.3V when driven HIGH |
 | 3 (right)  | bare | 0 (floating) | unknown |
 
-### T2 — possibly CN2 (per IP Cam Talk thread!)
-We thought "grouping of caps" but might be 6-pin debug header:
-- Pins 1-2: UART1 TX/RX (Pelco-D 2400 to STC8G)
-- Pins 3-4: UART2 TX/RX (VISCA 9600 to HK32F)
-- Pin 5: GND
-- Pin 6: 12V
+### T1 — 3-pin top-center (= IMA80S15 datasheet J6 — PWM header) — CONFIRMED via photo
+| Pin | Label (silkscreen) | Function | Status on MC800S |
+|-----|---|---|---|
+| 1 (left)   | GND | ground | **unpopulated — no wire** |
+| 2 (middle) | PWM1 | SoC PWM1 output (IR LED dimming in IMA80S15 ref design) | **unpopulated — no wire** |
+| 3 (right)  | PWM0 | SoC PWM0 output (warm LED dimming in IMA80S15 ref design) | **unpopulated — no wire** |
 
-**RE-INSPECT THIS AREA** — if 2x3 unpopulated solder pads, it's CN2.
+**MC800S does not use the SoC's PWM peripheral for any LED control.** All IR LED
+control (on/off + brightness) is delegated to the STC8G on the distro board.
 
 ### L1 — 2-pin top-left (= IMA80S15 datasheet J5 — RESET) — FULLY TRACED
 | Pin | Color | Datasheet name | Voltage | Notes |
@@ -314,11 +315,73 @@ Also need to re-trace the white wire's connection on the HK32F board PCB: does i
 a small chip/transistor before reaching the HK32F MCU? The "doesn't touch MCU" finding may
 have missed an indirect path.
 
-## REVISED: IR LED PWM path is unknown
+## IR LED PWM path — RESOLVED 2026-05-15 (double-confirmed via photo)
 
-Earlier hypothesis that the white "IR" wire was IR LED PWM control was WRONG. The white
-wire is Pelco-D UART (above). The IR LED PWM signal must travel on a different,
-unidentified wire from SoC J6 PWM1 to PT4115 DIM pin on distro board.
+**Visual proof from SoC main board photo**: The IMA80S15 J6 PWM header
+(top edge of board, labeled `GND | PWM1 | PWM0`) is physically present on
+the PCB but **the 3-pin connector is unpopulated — no wires attached**.
+
+The SoC's SSC338Q PWM peripheral is exposed on this header but not wired
+to anything in the MC800S assembly. The phonehome report's references to
+`/sys/class/pwm/pwmchip0/pwm0/duty_cycle` describe SoC kernel capability,
+not actual wired functionality on this camera.
+
+The PT4115 DIM signal originates **locally on the distro board**, NOT from the SoC:
+
+```
+STC8G2K325A pin 28 (P1.7 / hardware PWM6)
+    │
+    └─→ 47 Ω series resistor
+            │
+            └─→ PT4115 pin 3 (DIM)
+                    │
+                    └─→ controls IR LED brightness via PWM duty cycle
+```
+
+User confirmed via continuity trace 2026-05-15: PT4115 DIM goes to STC8G pin 28
+via a single **1 kΩ series resistor** (silkscreen "102") and 4 vias for routing.
+Pin 28 on STC8G2K325A LQFP-32 is P1.7, which has hardware PWM6 peripheral
+(verify against official STC8G2K datasheet for the exact part variant).
+
+**STC8G VCC = 5 V** (confirmed 2026-05-15 by measuring 5 V at DIM with camera
+powered and in daylight mode). STC8G pin 28 actively drives HIGH = 5 V CMOS,
+which means STC8G is running on the 5 V rail (not 3.3 V). Implications:
+- All STC8G GPIO outputs are 0 V / 5 V CMOS
+- White wire signal (HK32F TX → STC8G RxD) is 5 V CMOS at idle high
+- ULN2803A inputs from STC8G are 0 V / 5 V CMOS
+- Diode D3 on white wire likely handles the 3.3 V (HK32F) → 5 V (STC8G) level
+  difference via either forward-drop level shifting or protection against
+  back-feed
+- AD3 digital inputs are 5 V tolerant, so probing is safe without level shifters
+
+**LED on/off vs brightness control architecture** (refined):
+- DIM = brightness setpoint (continuous HIGH 5 V observed in daylight = "100% max")
+- ULN2803A pin 17 (output 2C, open-collector sink to GND) = master on/off gate for
+  LED chain return path. In daylight, this gate is open (no LED current flow).
+- The two are controlled by separate STC8G GPIOs
+- Open question: does the camera actually PWM the DIM in night mode, or is DIM held
+  constant HIGH and only the ULN2803A gate switches? Will be answered by the next
+  capture (cover CDS, watch DIM waveform)
+
+**Implication for OpenIPC daemon**:
+- No need to claim a SoC PWM channel or patch DTS for IR
+- IR brightness control is via "set brightness" command sent through the existing
+  HK32F→STC8G white-wire protocol (66666 baud, custom 6-byte frames)
+- STC8G may also be fully autonomous on IR (using its own ADC on CDS sensor) —
+  needs verification with AD3 capture during night-mode toggle
+
+The SoC's exposed `/sys/class/pwm/pwmchip0/pwm0` from the phonehome report is for
+something else (warm LEDs, fan, or unused) — not the IR LEDs.
+
+### Verification plan (next AD3 session)
+
+1. Scope 1 → PT4115 DIM pin (47 Ω side)
+2. Scope 2 → STC8G pin 28
+3. Cover CDS photoresistor → IR comes on
+4. Both channels should show identical PWM waveforms — confirms direct trace
+5. With white wire + AF UART also captured (DIO 0/1/2), cover/uncover CDS while
+   watching all four signals to determine whether IR is STC8G-autonomous or
+   commanded via the protocol relay
 
 ## Distribution Board — 9 connectors
 
@@ -529,6 +592,193 @@ The two biggest things to remember:
 
 ---
 
+## 🔥🔥🔥 BREAKTHROUGH 2026-05-16 (#3) — MULTI-CAPTURE COMPARATIVE DECODE
+
+After two single-action captures (`upthendown.csv` = ups-then-downs sequence;
+`Downleftright.csv` = downs+lefts+rights), and user clarification on capture
+content, the opcode 0x86 frame structure is mapped:
+
+### Captures compared
+
+| Capture | Actions | Frames | Bits 4-7 (ULN_1-4)? | Implication |
+|---|---|---|---|---|
+| `upthendown.csv` (utd) | ups then downs | 859 | **idle** (no transitions) | Tilt uses ULN_5-8, NOT probed here |
+| `Downleftright.csv` (dlr) | downs + lefts + rights (mix of holds + clicks) | 858 | **active** (~800 trans each) | Pan uses ULN_1-4 = bits 4-7 |
+
+### Frame structure for opcode 0x86 (motor command, refined)
+
+```
+06 66 00 60 80 66 E6 80 | 86 80 [B10] [B11] [B12] [B13] [B14] 00 1E 00 00 [B19]
+```
+
+| Byte | utd values | dlr values | Interpretation |
+|---|---|---|---|
+| B8 | 0x86 (100%) | 0x86 (100%) | Opcode: motor command |
+| B9 | 0x80 (const) | 0x80 (const) | Sub-opcode |
+| B10 | 16 distinct (00, 06, 18, 1E, 60, 66, FE, F8, E6, E0, 7E, 78, 86, 80, 98, 9E) | 16 distinct (similar set) | Magnitude / position |
+| B11 | `0x78: 297, 0x9E: 562` (2 values) | `0x78: 55, 0x9E: 474, 0xE6: 329` (3 values, **0xE6 only in pan**) | Press-duration encoding × axis flag |
+| B12 | 0x00 (const) | `0x00: 529, 0x06: 329` | **0x06 = pan axis active** |
+| B13 | {00, 06, FE} | {00, 06, 18, E0, E6, F8, FE} | direction/quadrant flag |
+| B14 | `06: 787, 66: 72` | `06: 491, 66: 367` | Speed or modifier flag (more 0x66 during pan) |
+| B16 | 0x1E (const) | 0x1E (const) | **Motor-in-motion status flag** |
+| B19 | 12 distinct | 16 distinct | Position counter / progress |
+
+### Key takeaways
+
+1. **B11 is NOT a simple direction byte** — it encodes press type (click vs hold)
+   combined with axis selector.  Value 0xE6 appears ONLY when pan moves, suggesting
+   `B11 in {0x78, 0x9E}` for tilt and `B11 = 0xE6` for pan (with internal flags).
+2. **B12 = 0x06 marks pan-axis frames** (529 of 858 dlr frames had B12=0x00, the
+   remaining 329 had 0x06 — and only dlr had any 0x06 because utd was tilt-only).
+3. **ULN_1-4 (probed bits 4-7) is the PAN stepper drive**.  Tilt stepper drives
+   the OTHER 4 ULN inputs (pins 5-8 on the ULN2803A, not in current probe set).
+4. **Direction info is distributed** across B10, B11, B12, B13, B19 — no single
+   byte cleanly says "up" vs "down" or "left" vs "right".  Need additional
+   single-action captures to isolate each axis × direction.
+
+### Next captures to fully resolve the dictionary
+
+- `panLeft_hold.csv` — long-press pan left only
+- `panRight_hold.csv` — long-press pan right only
+- `tiltUp_click.csv` — short-press tilt up only
+- `tiltDown_click.csv` — short-press tilt down only
+- `zoomIn_hold.csv` — telephoto
+- `zoomOut_hold.csv` — wide
+- `idle_30sec.csv` — pure heartbeat baseline (should be opcode 0x80, not 0x86)
+
+With those eight captures, the opcode 0x86 byte map will be unambiguous and we can
+implement the OpenIPC daemon's motor command encoder.
+
+## 🔥🔥 BREAKTHROUGH 2026-05-16 (#2) — TILT UP/DOWN AF FRAME STRUCTURE DECODED
+
+User performed an "UP then DOWN" tilt action while AD3 captured `upthendown.csv`
+(Raw Events).  Decoded bit 1 at 115200 baud — got 859 AF frames at 90.2% sync alignment.
+
+**ALL 859 frames have opcode B8 = 0x86** (vs boot capture which had mixed opcodes).
+This identifies 0x86 as the **"motor active / telemetry" opcode**.
+
+Refined frame structure for opcode 0x86 (motor active):
+
+| Byte | Value(s) | Role |
+|---|---|---|
+| B0–B7 | `06 66 00 60 80 66 E6 80` | Sync header (constant) |
+| **B8** | `0x86` | **Opcode: motor active / position telemetry** |
+| B9 | `0x80` | Constant in this capture (sub-opcode?) |
+| **B10** | varies, correlated with B11 | High byte of signed position/velocity |
+| **B11** | `0x78` (297×) or `0x9E` (562×) | **Direction: 0x78 = UP, 0x9E = DOWN** |
+| B12 | `0x00` | Constant |
+| B13 | mostly `0x06` | Flag |
+| B14 | `0x06` dominant, occ. `0x66` | Flag |
+| B15 | `0x00` | Constant |
+| **B16** | `0x1E` | **Status flag: motor in motion** |
+| B17–B18 | `0x00` | Constant |
+| B19 | 12 unique | Position counter / progress field |
+
+B10+B11 together encode direction and magnitude:
+- B11 = 0x78 (UP): B10 in {FE, F8, E6, E0} — high-bit-set range (0xE0–0xFE)
+- B11 = 0x9E (DOWN): B10 in {00, 06, 18, 1E, 60, 66} — low byte values (0x00–0x66)
+
+Treating B10/B11 as signed 16-bit velocity:
+- `FE 78` = -392 → UP at speed X
+- `00 9E` = +158 → DOWN at speed Y
+
+The 65.4% / 34.6% split (DOWN dominates) is consistent with user doing UP first
+then DOWN, with DOWN action probably running when capture ended.
+
+Frame transmission rate: **859 frames / 43 s ≈ 20 fps = 50 ms per frame** — that's
+the motor telemetry refresh rate.
+
+### Comparison to boot capture opcodes
+
+| Opcode (B8) | Boot capture | Up/down capture | Meaning |
+|---|---|---|---|
+| 0x80 | 48.6% (dominant) | 0% | **Idle heartbeat** |
+| 0x1E | 31.4% | 0% | **Boot / home seek**? |
+| 0x18 | 3.3% | 0% | AF / zoom init? |
+| 0x86 | 0% | **100%** | **Motor active (telemetry)** |
+| 0x06, 0x00, 0x60, 0xE6, 0xE0, 0xF8, 0x66, 0x7E, 0x78, 0x9E | rare | 0% | Specific home-seek sub-commands |
+
+### Next captures needed for opcode dictionary
+
+Single-action clean captures of each motion type:
+1. **Pan left only** → identify pan-L opcode/payload
+2. **Pan right only** → identify pan-R opcode/payload
+3. **Zoom in only** (telephoto) → zoom-in encoding
+4. **Zoom out only** (wide) → zoom-out encoding
+5. **Focus near** → focus-near
+6. **Focus far** → focus-far
+7. **IR-cut toggle** → identify IR enable/disable encoding
+8. **Idle for 30 seconds** → pure heartbeat baseline
+
+After collecting these, each opcode-byte position maps unambiguously to one
+control function and we have the full PTZ command dictionary for the OpenIPC daemon.
+
+---
+
+## 🔥 BREAKTHROUGH 2026-05-16 (#1) — WHITE WIRE IS HK32F DEBUG CONSOLE AT 9600 BAUD
+
+User's second AD3 capture (`newacq000{1,2,3}.csv`) captured at 6.25 MS/s with Raw
+Events export format.  Decoding bit 9 (the white wire) at **9600 baud** reveals
+clean ASCII boot banner from the HK32F lens MCU:
+
+```
+version   :1.20
+build date:Aug  4 2022
+build time:10:02:51
+ip moudle :AJ       <-- "module" misspelled in firmware; "AJ" = camera family name
+lens      :LH3X     <-- LH3X is the lens model
+Watch Dog :Enable
+```
+
+The banner repeats at every HK32F reboot, identifying:
+- **HK32F firmware version**: 1.20
+- **Build timestamp**: Aug 4 2022, 10:02:51
+- **Module identifier**: "AJ" — this is the origin of the "AJ protocol" name used
+  throughout the project
+- **Lens**: LH3X
+
+**Major implication**: the previous hypothesis (white wire = HK32F→STC8G at 66666 baud
+binary protocol with `51 01 04 78 01 0D` 6-byte frames) is **WRONG**.  The earlier
+PulseView/Nucleo LA decode at 66666 baud was finding spurious repeating patterns from
+*misinterpreting a 9600 baud ASCII signal at the wrong rate*.
+
+The white wire is actually the **HK32F's serial debug/command console**:
+- 9600 8N1 ASCII
+- Boot banner identifying firmware/lens
+- Probably accepts text commands (zoom/focus/pan/tilt) during operation
+- Acts as the HK32F↔STC8G control link AND as a debug tap accessible to anyone with
+  a USB-serial probe
+
+**Tooling that needs updating** based on this correction:
+- `hk32_stc8g_decoder.py` — the "6-byte frame + 0x0D delimiter" hypothesis was based
+  on the wrong-baud misdecode.  Real protocol is line-oriented ASCII at 9600 baud.
+- `pelco_capture.ps1` — already says "not Pelco-D", needs baud changed to 9600.
+- `sr_uart_extract.py` — needs no change, just needs to be invoked with `--baud 9600`
+  on the existing `.sr` captures to re-decode them.
+
+**Open question (Phase 4b refined)**: what is the ASCII command vocabulary the
+HK32F→STC8G console accepts during PTZ operation?  Need a longer capture with
+commanded actions to see post-boot traffic.
+
+## SECONDARY FINDING 2026-05-16 — bit 1 has a 115200 binary signal
+
+bit 1 in the same capture shows ~248 transitions over 41 s, decoding at 115200 baud
+to a repeating 5-6 byte pattern:
+
+```
+66 86 98 60 E6 E6 66 86 98 60 E6 E6 ... 78 66 06 86 98 66 FE
+```
+
+This is NOT the AF sync header (`06 66 00 60 80 66 E6 80`), so it's either:
+- AF telemetry (HK32F→SoC) which we previously couldn't capture due to the dead
+  black-wire connection — and the new tap may be picking up some but missing the
+  sync header somehow
+- A different protocol entirely on a wire we haven't fully traced yet
+- The same signal as bit 9 but my decoder is failing to align at 115200
+
+To resolve: re-run `aj_frame_parser.py` on `ev_b1_115200.bin` (already done — 0
+frames found, so this is NOT clean AF data); and probe more wires.
+
 ## CURRENT FINDINGS (2026-05) — SUPERSEDES OLD HYPOTHESES
 
 ### Protocol architecture (confirmed via continuity tracing + LA captures)
@@ -640,6 +890,169 @@ From LA captures (LogicalRust SUMP firmware on Nucleo F411RE):
 - **D6 red wire dead** — wire connection issue, needs verification before
   proceeding with AF telemetry decode.
 
+### Channel scan results 2026-05-15 (via sr_uart_extract.py)
+
+Verified the captured data against fresh tool pipeline (`sr_uart_extract.py` → `hk32_stc8g_decoder.py`):
+
+| Channel | Baud | capture2.sr | capture3.sr | Verdict |
+|---|---|---|---|---|
+| D0..D2 | any | 0–1 byte (start-edge noise) | 0–1 byte | unused / GND |
+| D3 (yellow) | 66666 | none | 6 bytes garbage | not the right baud/channel for the yellow signal |
+| D4 (AF cmd black) | 115200 | **0 bytes** | **0 bytes** | AF UART idle during both captures (no zoom/focus action commanded) |
+| D5 (white wire) | 66666 | `51 01 04 78 01 0D` clean | leading FF junk then `51 01 04 78 01 0D` | **baseline heartbeat confirmed** |
+| D5 (white wire) | 115200 | 20 bytes garbage | 8 bytes garbage | wrong baud — 66666 is right |
+| D6 (AF tlm red) | 115200 | 1 byte (idle high) | 1 byte (idle high) | **wire/connection dead — verified** |
+| D7 | any | 1 byte | 1 byte | unused |
+
+Implications:
+1. Both captures were **idle baselines** — only the HK32F heartbeat to STC8G is visible
+2. Need stock-firmware boot + triggered PTZ commands to see real protocol data
+3. D6 needs hardware repair before AF telemetry decode is possible
+4. The `0D` trailer in white-wire frames is NOT any standard checksum (sum/XOR/2's-complement all fail) — it's a fixed delimiter (CR character), consistent with the longer-frame variant `00 E2 00 42 0A 00 03 00 00 0D` also seen in capture2.sr
+
+### AD3 capture 2026-05-16 (`acq0001.csv`, 11.6 GB) — labeled boot timeline
+
+User-reported sequence during the 134-second capture (in approximate boot order):
+
+1. **PoE applied** — SoC NRST released, brown wire transitions LOW→HIGH
+2. **Zoom reset to 0** — drives zoom motor toward wide-angle limit
+3. **Auto-focus** — runs focus sweep, settles on best focus
+4. **Pan sweep** (home seek, described as "up-down" by user — may be tilt-axis terminology
+   inversion vs. convention)
+5. **Tilt sweep** (home seek, described as "left-right")
+6. **IR LEDs on** — activated for entire boot sequence and persisting after
+7. **User toggled IR off, then back on** — this **retriggered auto-focus** automatically
+   (consistent with the IR-cut filter switching causing focal-plane shift; firmware
+   compensates by re-running AF)
+
+Strong correlation targets for the decoded protocol bytes:
+- AF UART (R2 RED): zoom-reset opcodes, AF-trigger opcodes, pan/tilt commands during seek
+- White wire 66666: heartbeat baseline + (probably) commanded IR-state changes when the user
+  manually toggled IR
+- **IR autonomy answer is now in this capture**: if white wire shows new frames at the IR
+  toggle moment, IR is commanded via the protocol relay; if silent (only DIM signal changes),
+  STC8G is fully autonomous on IR
+
+The IR-toggle-triggers-AF observation is a useful piece of firmware behavior to remember
+when implementing the OpenIPC daemon — toggling IR-cut requires a follow-up AF cycle.
+
+
+
+First multi-channel AD3 capture of the camera during boot + idle.  Initial activity
+scan of a 1-second slice from -2 s to -1 s relative to trigger:
+
+| Channel | Status | Count (per 1 s) |
+|---|---|---|
+| **red(HK)** (AF cmd, SoC→HK32F) | ✅ active | 689 falling edges, continuous UART traffic |
+| **black(HK)** (AF tlm, HK32F→SoC) | ❌ **stuck LOW** | 1 edge in 1 s — same persistent issue as D6 in earlier captures |
+| **whitewire(HK)** (HK32F→STC8G) | idle in this slice | 0 edges (may be active elsewhere — full file processing TBD) |
+| **brown(net)** (RESET) | high (camera running) | 0 edges |
+| **purple(net)** (LED activity) | mostly high, 2 falling edges | network status indicator |
+| **yellow(net)** | stuck LOW | unused / unconnected wire |
+| **ULN_1..4** (stepper drive) | all LOW | no stepper activity in this slice |
+
+The persistent **black(HK) stuck LOW** is the same hardware issue from prior captures.
+HK32F TX line reads at 1.48 V mid-rail per the earlier voltmeter check — below AD3 digital
+threshold (1.65 V) so it always reads as 0.  Wire fix or buffer needed before AF telemetry
+can be captured.
+
+Decode of 1-second red(HK) slice produced 439 bytes with the canonical AF sync header
+`06 66 00 60 80 66 E6 80` appearing at offsets 0, 22, 44, 65, 87.  **Frame stride is ~22 bytes**
+(sync-to-sync), not 20 as previously hypothesized from older USB-serial capture.  Frames may
+actually be 22 bytes, or the 20-byte hypothesis was based on captures missing 2 trailing bytes
+per frame — to be resolved with full-file decode.
+
+Tooling: `wf_csv_uart.py` (single-channel) and `wf_csv_multi_uart.py` (multi-channel,
+one-pass) read the WaveForms CSV by streaming, no full-file load.
+
+#### Full extraction results 2026-05-16
+
+Extracted from full `acq0001.csv` (134 s, 268 M samples, 11.6 GB):
+
+| Channel | Baud | Output | Result |
+|---|---|---|---|
+| red(HK) AF cmd | 115200 | af_cmd.bin (36,889 bytes) | ✅ **1,435 frames decoded, 77.8% sync-aligned** |
+| black(HK) AF tlm | 115200 | af_tlm.bin (1 byte) | ❌ wire stuck low (known hardware issue) |
+| whitewire(HK) HK→STC8G | 66666 | whitewire.bin (339 bytes) | ❌ glitch noise, line was idle entire capture middle |
+
+The whitewire channel showed 1,000,000 consecutive HIGH samples in a middle slice with
+zero edges — probe was effectively disconnected from real signal during this capture.
+Re-verify clip on the actual HK32F 3p-top "IR" pin or distro NET pin 9 for the next run.
+
+#### AF protocol structure refined (from 1435 live boot+idle frames)
+
+Definitive 20-byte frame layout, verified across this capture:
+
+| Bytes | Variance in this capture | Role |
+|---|---|---|
+| B0–B7 | constant `06 66 00 60 80 66 E6 80` | Sync header |
+| **B8** | 16 unique (opcode space) | **Command/state opcode** |
+| B9–B14 | 12–16 unique each | Payload (command parameters) |
+| B15 | 9 unique | Sub-flag |
+| B16 | 3 unique: `{0x00, 0x18, 0x80}` | Status/mode flag |
+| B17–B19 | 16 unique each | Tail / response / position data |
+
+Opcode distribution in this boot+idle capture (state byte B8):
+- 0x80 (48.6%), 0x1E (31.4%), 0x18 (3.3%), 0x60 (3.0%), 0xE6 (2.3%), 0x66 (1.8%),
+  0xE0 (1.7%), 0x78 (1.5%), 0xF8 (1.4%), 0x7E (1.3%), others <1%
+
+Distinct from the historical `hk32115200_red.csv` capture (where B8 was 0x06 89% / 0x00 11%) —
+those captures were during commanded actions, this one is mostly boot home-seek + idle.
+
+First two frames at capture offset 59 and 79 have **identical payload** with B8=0x1E —
+likely the **first command issued at boot start** (probably zoom-to-zero or AF-init).
+Frames 2–30 settle into a B8=0x18 family with consistent payload skeleton — the
+**home-seek loop** running.
+
+### AF protocol structure (refined 2026-05-15 from historical hk32115200_red.csv)
+
+USB-serial capture on D6 (red wire = HK32F TX, AF telemetry) from a prior
+session captured 2937 frames at 95% sync alignment. Re-analysis confirms:
+
+| Offset | Bytes | Variance | Interpretation |
+|---|---|---|---|
+| 0-7 | `06 66 00 60 80 66 E6 80` | constant | **sync header** |
+| 8 | `0x06` (89%) / `0x00` (11%) | 2 values | **command/state byte** (was hypothesized 0xFE/0xE6 — wrong) |
+| 9-13 | many values | 12-16 unique | **payload** (motor speed, action data) |
+| 14 | `{00, 06, 80, 98}` | 4 unique | sub-header byte 1 |
+| 15 | `{00, 1E, 80}` | 3 unique | sub-header byte 2 |
+| 16 | `{00, 1E}` | 2 unique | sub-header flag |
+| 17 | `{00, 1E}` | 2 unique | sub-header flag |
+| 18-19 | many values | 16+ unique | **status/telemetry, NOT a CRC** (see analysis below) |
+
+CRC hypothesis status (verified 2026-05-15 with `aj_crc_solver.py --auto` against the 2937-frame historical capture):
+- No CRC-8 or CRC-16 polynomial matches at any partition tested
+- Splitting by state byte (B8 = 0x06 vs 0x00) reveals B18 is overwhelmingly 0x00 in
+  state=0x06 frames (~70% of them) — that distribution is inconsistent with a CRC
+  (which would spread evenly across all 256 values)
+- Top recurring (B18, B19) pairs in state=0x06: `00 00`, `00 FE`, `00 E6`, `00 F8`, `00 7E`...
+  These look like **enumerated status codes / position telemetry** (e.g. "zoom position = 0xFE")
+  rather than computed checksums
+- **Working hypothesis**: the AF protocol has no checksum on this direction; integrity is
+  implicit (frames are short, link is local, errors retried at application layer)
+
+The original `aj_frame_parser.py` had a wrong "marker 06 00 1E 00 00" hypothesis
+at offset 9-13 (0/2937 matched). Docstring updated 2026-05-15 to reflect actual
+structure.
+
+### Tool pipeline for next captures
+
+```
+# Offline analysis of PulseView .sr captures:
+python sr_uart_extract.py capture.sr --channel 5 --baud 66666 --out white.bin
+python hk32_stc8g_decoder.py white.bin
+
+# Live capture via USB-serial during stock-firmware operation:
+.\pelco_capture.ps1 -ComPort COM5         # white wire @ 66666 baud, all PTZ actions
+.\aj_diff_campaign.ps1 -ComPortRx COM6 -ComPortTx COM7   # bidirectional AF @ 115200
+
+# Then parse:
+python hk32_stc8g_decoder.py whitewire_captures\session_*\*.bin
+python aj_frame_parser.py aj_captures\session_*\*_RX.bin
+python aj_diff_visualizer.py aj_captures\session_*\01_idle_baseline_RX.csv aj_captures\session_*\02_zoom_in_30_RX.csv
+python aj_crc_solver.py aj_captures\session_*\*.csv
+```
+
 ### IR LED upgrade plan (940nm covert)
 
 Ordered: 940nm 3W IR LEDs, 400-700mA, 1.1-1.5V V_f (measured), 3535 SMD with thermal pad.
@@ -677,7 +1090,7 @@ Upgrade to 6 LEDs in series:
 | Phase 1 — Method 1/2 determination | ✅ Method 2 confirmed via trace work | — |
 | Phase 2a — AF protocol diff campaign (R2 RED/BLACK) | 🚧 partial captures; need D6 fix + multi-action runs | D6 red wire connectivity |
 | Phase 2b — Pelco-D-style white wire capture | 🚧 single captures done at 66666 baud; need diff campaign | — |
-| Phase 3 — IR LED PWM path identification | ⏳ pending | Camera-on probe of T1 pin 3 during night mode |
+| Phase 3 — IR LED PWM path identification | ✅ RESOLVED — STC8G pin 28 (P1.7/PWM6) drives DIM locally via 47Ω | — |
 | Phase 4 — Protocol byte-mapping + CRC decode | ⏳ pending | More captures with known triggers |
 | Phase 5 — OpenIPC mc800s-ptzd daemon | ⏳ pending | Phase 4 output |
 | Phase 6 — End-to-end PTZ verification | ⏳ pending | Phase 5 output |

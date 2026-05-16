@@ -73,16 +73,18 @@ Pre-camera tooling complete. Live capture campaign in progress.
 ## Tools in this repo
 
 ### Capture tools (PowerShell)
-- `aj_diff_campaign.ps1` — dual-port UART capture (AF protocol on R2 RED/BLACK)
-- `pelco_capture.ps1` — Pelco-D-style capture on white wire
+- `aj_diff_campaign.ps1` — dual-port UART capture, AF protocol on R2 RED/BLACK (115200 8N1)
+- `pelco_capture.ps1` — white-wire capture, HK32F→STC8G custom protocol (66666 8N1, NOT actually Pelco-D)
 - `go.ps1` — one-shot workflow runner (capture → parse → diff → CRC-solve)
 - `sd_setup.ps1` — preps SD card with stock-firmware RCE script
 
 ### Analysis tools (Python)
-- `aj_frame_parser.py` — extracts 20-byte AJ frames from raw UART captures
+- `aj_frame_parser.py` — extracts 20-byte AF frames from raw captures (sync `06 66 00 60 80 66 E6 80`)
 - `aj_diff_visualizer.py` — side-by-side capture comparison, flags command bytes
 - `aj_crc_solver.py` — brute-forces CRC polynomial against captured frames
-- `pelco_decoder.py` — decodes standard Pelco-D 7-byte frames
+- `hk32_stc8g_decoder.py` — decodes the HK32F→STC8G 6-byte custom protocol (sync `0x51`, delim `0x0D`)
+- `sr_uart_extract.py` — extracts UART bytes from a PulseView `.sr` file at any channel/baud
+- `pelco_decoder.py` — **DEPRECATED** stub; the white wire turned out NOT to be Pelco-D. Use `hk32_stc8g_decoder.py` instead.
 
 ### Logic analyzer (Nucleo F411RE)
 - `nucleo_la/logicalrust.bin` — Rust-based SUMP firmware (native F411 timing)

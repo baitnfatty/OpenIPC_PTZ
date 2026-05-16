@@ -1,13 +1,24 @@
-# pelco_capture.ps1 — Capture Pelco-D traffic on the white wire (SoC -> STC8G via STC8G P3.0)
+# pelco_capture.ps1 — Capture HK32F→STC8G traffic on the white wire (NOT Pelco-D!)
+#
+# Filename "pelco_capture" is historical — protocol turned out NOT to be standard
+# Pelco-D after measurement. Real protocol:
+#   - 66,666 baud 8N1 (NOT 2400)
+#   - 6-byte custom frames (NOT 7-byte Pelco-D)
+#   - Baseline recurring frame: 51 01 04 78 01 0D
+#   - Direction: HK32F lens MCU TX → diode D3 → STC8G P3.0 RxD (NOT SoC → STC8G)
 #
 # Triggers PTZ pan/tilt actions via the camera's Hikvision API while capturing
-# the resulting Pelco-D 2400 8N1 traffic on the white wire. Pelco-D is a well-
-# known protocol (32-bit frames with sync byte 0xFF + address + command + data + checksum)
-# so decoding is mostly a known-protocol parse rather than reverse engineering.
+# what the HK32F is forwarding to the STC8G.  Because the HK32F is acting as
+# the central relay, pan/tilt activity should appear here even though the SoC
+# never directly speaks to the STC8G.
 #
 # Wiring:
-#   White wire (somewhere on SoC main board, originates from /dev/ttyS1 TX) ─→ USB-serial RX
+#   White wire (tap on distro board NET connector, or HK32F 3p-top "IR" pin) ─→ USB-serial RX
 #   Camera GND ─→ USB-serial GND
+#   USB-serial chip MUST support 66666 baud divisor (CH340G, FT232 w/ custom divisor, PL2303HX OK)
+#
+# Decode with:
+#   python hk32_stc8g_decoder.py <output-dir>\*.bin
 #
 # Usage:
 #   .\pelco_capture.ps1 -ComPort COM5
@@ -21,9 +32,14 @@ param(
     [string]$ApiUser = "admin",
     [string]$ApiPass = "",
 
-    [string]$OutputDir = "C:\Users\matth\investigate\pelco_captures",
+    [string]$OutputDir = "C:\Users\matth\investigate\whitewire_captures",
 
-    [int]$BaudRate = 2400,
+    # CORRECTED 2026-05-16: actual protocol is 9600 baud ASCII (HK32F debug console).
+    # The earlier 66666 baud hypothesis was a misinterpretation of the same signal at
+    # the wrong rate.  The console prints a boot banner identifying firmware version,
+    # build date, module type (AJ), and lens model (LH3X) — then accepts operational
+    # commands.
+    [int]$BaudRate = 9600,
 
     [int]$PreTriggerSec = 2,
     [int]$DuringActionSec = 4,
@@ -51,13 +67,13 @@ $sessionDir = Join-Path $OutputDir "session_$timestamp"
 New-Item -Path $sessionDir -ItemType Directory -Force | Out-Null
 $manifestPath = Join-Path $sessionDir "manifest.txt"
 
-"Pelco-D Pan/Tilt Capture — Session $timestamp" | Out-File $manifestPath -Encoding UTF8
-"Port: $ComPort @ $BaudRate 8N1 no flow" | Out-File $manifestPath -Encoding UTF8 -Append
+"HK32F->STC8G white-wire capture — Session $timestamp" | Out-File $manifestPath -Encoding UTF8
+"Port: $ComPort @ $BaudRate 8N1 no flow  (custom protocol, NOT Pelco-D)" | Out-File $manifestPath -Encoding UTF8 -Append
 "Camera: ${CameraIP}:${ApiPort}" | Out-File $manifestPath -Encoding UTF8 -Append
 "Output: $sessionDir" | Out-File $manifestPath -Encoding UTF8 -Append
 "" | Out-File $manifestPath -Encoding UTF8 -Append
 
-Write-Host "=== Pelco-D Pan/Tilt Capture ===" -ForegroundColor Cyan
+Write-Host "=== HK32F->STC8G White Wire Capture (66666 baud, custom protocol) ===" -ForegroundColor Cyan
 Write-Host "Port:    $ComPort @ $BaudRate"
 Write-Host "Output:  $sessionDir"
 Write-Host ""
@@ -140,7 +156,7 @@ try {
 
     Write-Host ""
     Write-Host "=== Done ===" -ForegroundColor Green
-    Write-Host "Decode with: python pelco_decoder.py $sessionDir\*.bin"
+    Write-Host "Decode with: python hk32_stc8g_decoder.py $sessionDir\*.bin"
 }
 catch {
     Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
