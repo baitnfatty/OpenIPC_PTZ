@@ -1,12 +1,58 @@
 # MC800S PTZ Reverse-Engineering — Handoff Document
 
-**Date:** 2026-05-16
+**Last updated:** 2026-05-16
 **Project:** Reverse-engineer the JideTech MC800S PTZ camera so OpenIPC can drive
 zoom, focus, pan, tilt, IR LEDs, and the IR-cut filter without the stock proprietary
 firmware.
 
 This document is a self-contained snapshot of the project state so any human or LLM
 session can pick up where this one left off.
+
+---
+
+## ⚠️ How to amend this document (READ BEFORE EDITING)
+
+`HANDOFF.md` is the living source-of-truth for the project state across sessions.
+The full rules live in [`CLAUDE.md`](CLAUDE.md) (auto-loaded by every Claude Code
+session).  Quick version:
+
+1. **Never silently delete information.**  Mark superseded content with a dated
+   marker and add the new content alongside.  Mistakes stay easy to fix because
+   the wrong content is still visible inline.
+2. **Bump the `Last updated:` date** in the header above whenever you change
+   substantive content.
+3. **Add a one-line entry to the [Change log](#10-change-log)** at the bottom for
+   every meaningful update.
+4. **Commit each meaningful update** with a `HANDOFF:` prefix in the message.
+   Git is the ultimate safety net — every prior version is recoverable.
+
+### Quick correction template (copy/paste)
+
+When fixing wrong content, wrap the old text like this:
+
+```markdown
+> ~~**[CORRECTED YYYY-MM-DD]**~~ — superseded.  Preserved for traceability:
+>
+> [old text indented in blockquote]
+```
+
+…then add the corrected info immediately below in a new paragraph.
+
+### Quick supersede template (copy/paste)
+
+When a whole section becomes outdated:
+
+```markdown
+## [Section title] [SUPERSEDED YYYY-MM-DD — see "[New section]" above]
+> Kept for historical context.  Current understanding lives in the newer section.
+```
+
+### Rollback (if a HANDOFF edit goes wrong)
+
+```bash
+git log -p HANDOFF.md                       # see every prior edit
+git checkout <old-sha> -- HANDOFF.md        # restore — only touches HANDOFF.md
+```
 
 ---
 
@@ -331,13 +377,28 @@ With these, the full PTZ command dictionary will be unambiguous.
 
 ## 9. Key documents to read first if you're new to this project
 
-1. **MC800S-system-map.md** — read top-to-bottom, especially the "BREAKTHROUGH 2026-05-16"
+1. **CLAUDE.md** — auto-loaded by Claude Code; defines rules for this repo
+   including the HANDOFF.md amendment process
+2. **MC800S-system-map.md** — read top-to-bottom, especially the "BREAKTHROUGH 2026-05-16"
    sections at the top which contain the most current findings
-2. **README.md** — project overview and tool inventory
-3. This file (HANDOFF.md)
-4. The capture files themselves — try running `python aj_frame_parser.py af_cmd.bin`
+3. **README.md** — project overview and tool inventory
+4. This file (HANDOFF.md)
+5. The capture files themselves — try running `python aj_frame_parser.py af_cmd.bin`
    to see decoded protocol bytes
 
 ---
 
-*Last updated: 2026-05-16 by Claude session b0f57e92*
+## 10. Change log
+
+Append-only log of meaningful updates to this document.  Each entry: date,
+short description, optional commit SHA.  Add a new row at the **top** so the
+most recent change is always at the top of the log.
+
+| Date | Change | Commit |
+|---|---|---|
+| 2026-05-16 | Added Section 0 (amendment process) and Section 10 (this change log); created CLAUDE.md with project-wide rules for keeping HANDOFF.md current across sessions | *(this commit)* |
+| 2026-05-16 | Initial HANDOFF.md creation — captured project state through opcode 0x86 mapping, white-wire 9600 ASCII discovery, and the two single-action captures (`utd`, `dlr`) | [`abe16fa`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/abe16fa) |
+
+---
+
+*Document maintained per the amendment rules in [CLAUDE.md](CLAUDE.md).*
