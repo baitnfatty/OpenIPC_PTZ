@@ -592,6 +592,88 @@ The two biggest things to remember:
 
 ---
 
+## 🔥🔥🔥🔥🔥🔥 BREAKTHROUGH 2026-05-16 (#6) — IRIS = 0x1E, FOCUS = 0x9E
+
+Batch of 9 isolated single-action captures decoded (3× focus, 2× iris, 4× zoom+AF):
+
+| Capture | Frames | Top opcodes (B8) | Interpretation |
+|---|---|---|---|
+| iris0004 | 125 | **0x1E = 100%** | Pure iris adjustment |
+| iris0005 | 136 | **0x1E = 100%** | Pure iris adjustment |
+| focus0002 | 130 | 0x9E=58 (45%), 0x1E=47 (36%), 0x60=10 | Focus + iris (focus changes light, iris compensates) |
+| focus0003 | 130 | 0x1E=64 (49%), 0x60=20, 0x66=11 | Mostly iris with some zoom (likely focus action triggered iris/zoom too) |
+| zoomoutandfocus0006 | 152 | 0x9E=56, 0x98=35, 0x1E=33 | Focus + iris + focus sub-state |
+| zoomoutandfocus0007 | 154 | 0x1E=36, 0x80=30, 0x60=25, 0x86=22 | Mixed: iris + idle + zoom + pan/tilt |
+| zoomoutandfocus0008 | 310 | 0x98=68, 0x60=66, 0x9E=54 | Heavy zoom + focus settling |
+| zoominandfocus0009 | 304 | 0x86=81, 0x9E=41, 0x7E=38 | Pan/tilt and focus active concurrently |
+
+### Major corrections to opcode dictionary
+
+**0x1E is NOT "init / command start" as previously believed.** It's the **iris adjustment opcode**. The reason iris commands appear at boot (which seeded the misclassification) is that the camera adjusts iris during startup as part of normal initialization.  Same reason iris fires during zoom: changing focal length changes apparent scene brightness, and the iris compensates.
+
+**0x9E is the FOCUS motor opcode** (new).
+
+**0x86 stays as pan/tilt motor** (corrects the earlier "general lens motor" interpretation — the AF-during-zoom traffic was actually 0x9E focus frames, not 0x86 pan/tilt frames).
+
+### Final subsystem opcode map
+
+```
+Sync header (B0–B7):  06 66 00 60 80 66 E6 80
+
+Opcode (B8):
+  0x80  Idle / no-op
+  0x86  Pan/Tilt motor
+  0x60  Zoom motor
+  0x1E  Iris
+  0x9E  Focus motor
+  0x98  Focus sub-state (settling? transition?)
+
+Sub-opcode (B9):
+  0x80  Continuous / hold
+  0x00  Single step / click
+```
+
+### Focus frame structure example (B8 = 0x9E)
+
+```
+06 66 00 60 80 66 E6 80 | 9E 80 86 E6 00 E6 66 00 00 1E 00 00 7E
+                          ^^opcode = focus  ^^                    ^^B17=0x1E
+                                                                     (motor active flag in different position than pan/tilt!)
+```
+
+For pan/tilt frames (0x86), the motor-active flag is at **B16=0x1E**.
+For focus frames (0x9E), the motor-active flag appears to be at **B17=0x1E**.
+
+This is a useful pattern: the byte position of the active flag depends on which subsystem.  The daemon should know each opcode's flag-position.
+
+### Implication for OpenIPC daemon
+
+```python
+OPCODES = {
+    'idle':      0x80,
+    'pan_tilt':  0x86,
+    'zoom':      0x60,
+    'iris':      0x1E,
+    'focus':     0x9E,
+}
+
+SUB_OPCODES = {
+    'hold':   0x80,
+    'click':  0x00,
+}
+
+def build_motor_frame(subsystem, press_type, payload):
+    """Build a 20-byte AF UART frame for a motor command."""
+    sync = b'\x06\x66\x00\x60\x80\x66\xE6\x80'
+    b8 = OPCODES[subsystem]
+    b9 = SUB_OPCODES[press_type]
+    # payload (B10-B19) is subsystem-specific — needs cross-correlation with
+    # tilt/pan direction captures to finalize byte assignments
+    return sync + bytes([b8, b9]) + payload
+```
+
+---
+
 ## 🔥🔥🔥🔥🔥 BREAKTHROUGH 2026-05-16 (#5) — ZOOM CLICK vs HOLD STRUCTURALLY DIFFERENT
 
 `zoominclick.csv` (10.5-s isolated zoom-in single click, Raw Events, 194 frames)

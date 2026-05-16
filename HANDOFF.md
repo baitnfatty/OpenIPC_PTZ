@@ -1,6 +1,6 @@
 # MC800S PTZ Reverse-Engineering — Handoff Document
 
-**Last updated:** 2026-05-16 (refined: 0x86 may be general "lens-side motor command", not just pan/tilt)
+**Last updated:** 2026-05-16 (iris=0x1E, focus=0x9E discovered; 0x1E was NOT init — it's iris)
 **Project:** Reverse-engineer the JideTech MC800S PTZ camera so OpenIPC can drive
 zoom, focus, pan, tilt, IR LEDs, and the IR-cut filter without the stock proprietary
 firmware.
@@ -167,11 +167,14 @@ The AF UART (R2 RED/BLACK, 115200 8N1) carries 20-byte frames:
 
 | B8 | When seen | Inferred role |
 |---|---|---|
-| 0x80 | Boot idle, zoom-click 13% | **Idle heartbeat / motor-stopped** |
-| 0x86 | utd 100%, dlr 100%, zoom 11% | **Lens-side motor command** — pan/tilt when commanded by user; **AF motor when triggered by zoom or IR toggle** (per user obs 2026-05-16: continuous zoom prevents AF from settling, so AF keeps re-firing during zoom holds). B9 or payload bytes likely distinguish pan/tilt vs AF. |
-| 0x60 | zoom-in-HOLD 70%, zoom-in-CLICK 11% | **Zoom motor command (sustained drive)** |
-| **0x78** | **zoom-click 38%** *(new 2026-05-16)* | **Motor decel/coast-down OR end-of-travel limit** ⚠ ambiguous — see note below |
-| **0x7E** | **zoom-click 24%** *(new 2026-05-16)* | **Settling state OR limit-reached** ⚠ ambiguous |
+| 0x80 | Boot idle, low % in active captures | **Idle heartbeat / motor-stopped** |
+| 0x86 | utd 100%, dlr 100%, zoom 11%, zoomIn+AF 27% | **Pan/Tilt motor command** (also AF auto-firing concurrently during zoom) |
+| 0x60 | zoom-in-HOLD 70%, zoom+AF 22% | **Zoom motor command (sustained drive)** |
+| **0x1E** | **iris0004 = 100%, iris0005 = 100%** *(corrected 2026-05-16)* | **🎯 IRIS adjustment** (previously misclassified as "init/start" — iris commands appear at boot AND during zoom for lighting compensation, seeding the confusion) |
+| **0x9E** | **focus0002 = 45%, focus0003 present, zoom+AF mixed** *(new 2026-05-16)* | **🎯 FOCUS motor command** |
+| 0x98 | Focus & zoom+AF captures only | Focus settling / sub-state |
+| 0x66, 0x78, 0x7E | Click follow-throughs, zoom transitions | Decel/settle/transition states (or end-of-travel — TBD) |
+| 0xE0 | Rare home-seek substate | Boot/home-seek only |
 
 > ⚠ **0x78/0x7E interpretation uncertain.**  The zoom-click capture may have
 > been taken while the lens was at/near the telephoto endstop.  In that case,
@@ -413,7 +416,8 @@ most recent change is always at the top of the log.
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-05-16 | **Refined 0x86 interpretation** — user observed that during continuous zoom, AF never gets time to settle and keeps re-firing. This explains the 26 frames of B8=0x86 (11%) inside the zoom-hold capture — they're AF motor commands, not pan/tilt. Opcode 0x86 is likely the general "lens-side motor command" covering pan, tilt, AND focus. B9 or payload bytes distinguish which motor. Section 2.5 updated. | *(this commit)* |
+| 2026-05-16 | **🎯 Iris=0x1E + Focus=0x9E discovered** — batch of 9 isolated captures (focus×3, iris×2, zoom+AF×4) decoded. Both iris captures are 100% opcode 0x1E, proving 0x1E is the IRIS opcode (not "init/start" as previously thought — that was just because iris fires at boot). Focus captures dominated by new opcode 0x9E (44.6% in focus0002). 0x98 also appears in focus/zoom+AF combos as a focus sub-state. Full subsystem opcode map: pan/tilt=0x86, zoom=0x60, iris=0x1E, focus=0x9E, idle=0x80. **0x86 reclassified back from "general lens motor" to "pan/tilt specific"** — the AF-during-zoom traffic is actually B8=0x9E (focus), not B8=0x86. Section 2.5 + system map updated. | *(this commit)* |
+| 2026-05-16 | **Refined 0x86 interpretation** — user observed that during continuous zoom, AF never gets time to settle and keeps re-firing. (Note: subsequent capture analysis showed the 0x86 frames in zoom were ALSO pan/tilt — likely incidental motion. The TRUE AF opcode is 0x9E, discovered separately.) | [`eaa65a6`](https://github.com/baitnfatty/openipc_ptz/commit/eaa65a6) |
 | 2026-05-16 | **Flagged 0x78/0x7E interpretation as ambiguous** — user noted the zoom-click capture might have been at the telephoto endstop, in which case 0x78/0x7E are limit-reached codes, not generic decel. Added discriminator test (zoom click from wide end). Updated both Section 2.5 and system map breakthrough #5. | [`64160c7`](https://github.com/baitnfatty/openipc_ptz/commit/64160c7) |
 | 2026-05-16 | **Zoom click vs hold structurally different** — `zoominclick.csv` shows click introduces opcodes 0x78 (decel) and 0x7E (settle); HOLD is sustained 0x60, CLICK is brief 0x60 burst bracketed by 0x78/0x7E. Also: B9=0x80 (hold) vs B9=0x00 (click) on 0x60 frames suggests B9 is the press-type sub-opcode. | [`d6b6306`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/d6b6306) |
 | 2026-05-16 | **Zoom opcode 0x60 discovered** — `zoominhold.csv` decode shows zoom uses a different opcode than pan/tilt (0x86). Opcode dictionary expanded in Section 2.5 + system map breakthrough #4. New tool `wf_rawdata_uart.py` added for streaming Raw Data format. | [`574bb22`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/574bb22) |
