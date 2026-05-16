@@ -731,11 +731,23 @@ zoom-op-0x86 (during zoom):
 | B8 opcode | Seen where | Inferred role |
 |---|---|---|
 | **0x80** | Boot phases 1-4 (steady idle), zoom (1×) | **Idle heartbeat / no-op** |
-| **0x86** | utd 100%, dlr 100%, zoom 11% | **Pan/tilt motor command** |
+| **0x86** | utd 100%, dlr 100%, zoom 11% | **Lens-side motor command** — pan/tilt OR auto-focus motor (camera fires AF during zoom to track focal length; user obs: continuous zoom prevents AF from settling, so AF re-fires throughout the hold). B9 or payload bytes distinguish pan/tilt vs AF. |
 | **0x60** | Zoom-in 70% | **Zoom motor command** |
 | **0x1E** | Boot init, zoom 17% | **Command start / motor enable / init** |
 | 0x18 | Home seek (boot) | Boot motor command |
 | 0x06, 0x00, 0xE0, 0xE6, 0xF8, 0x66, 0x78, 0x9E | Boot home-seek sub-phases, rare in motion | Sub-state / specific motor steps |
+
+> ⚙️ **Insight 2026-05-16 (user)**: When zooming continuously, the camera's
+> auto-focus system can't converge because each new focal length requires a
+> new focus position but the lens never sits still.  The HK32F nonetheless
+> keeps firing 0x86 commands at the AF motor during the entire zoom, which is
+> why we see 11% of zoom-capture frames as 0x86.  This is consistent with the
+> earlier observation that IR-cut toggle also triggers an AF cycle (each
+> mechanical IR-cut switch changes the optical path requiring refocus).
+>
+> **Implication for the OpenIPC daemon**: when issuing a zoom command, the
+> daemon does NOT need to issue separate AF commands — the HK32F handles
+> auto-focus autonomously.  The daemon only needs to send the zoom opcode.
 
 ### What this means for the OpenIPC daemon
 
