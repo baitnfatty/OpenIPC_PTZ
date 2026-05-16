@@ -1227,34 +1227,159 @@ Replacement path: HK32F030MF4P6 dev boards on order ($18.99 5pcs, 8-day ship,
 Amazon). With dev boards, we can write our own AF protocol firmware and hot-air
 swap a programmed chip into the camera, defeating the lock permanently.
 
-#### Side-channel attack paths (new 2026-05-16)
+#### Side-channel attack paths (revised 2026-05-16 after deep datasheet research)
 
-User reported that another Claude session confirmed **voltage glitching this exact
-chip with AD3 + MOSFET has been demonstrated**.  Three attack paths now worth
-pursuing in priority order:
+**MAJOR CORRECTION**: The HK32F030MF4P6 is **NOT** a drop-in clone of STM32F030F4P6.
+The "M" suffix marks the TSSOP-20 "mini" family which is pin-compatible with
+**STM8S003**, not STM32F030.  Boot architecture is fundamentally different.
 
-1. **Verify lock with AD3** (30 min, free):
-   - AD3 DIO on SWDIO/SWCLK/NRST during CubeProgrammer connection attempt
-   - Look for any SWD response.  Silicon lock = no response at all.
-   - Definitive answer rather than relying on indirect CubeProgrammer error.
+> **[NOTE 2026-05-16]** — confirmation directly from the authoritative source.
+> User provided the actual HK32F030M Datasheet (Rev 1.2.0, 2021-11-23) which
+> definitively confirms: no Boot mode section, no BOOT0 pin, only USART1 (no
+> USART2), no system-memory bootloader region in the memory map.  The chip is
+> a Cortex-M0 *die* but with the peripheral set and packaging of an STM8-class
+> part.  Earlier source-based confidence is now backed by reading the OEM
+> document end-to-end.  Companion file: `hk32f030m_datasheet_text.txt`
+> (extracted via `pdftotext -layout`).
+>
+> The non-M HK32F030 (LQFP packages, §3.11 Boot mode, USART1/USART2 bootloader)
+> is a genuinely different die.  Do not conflate them when reading community
+> docs — many tutorials online about "HK32F030 bootloader" refer to the LQFP
+> variant and DO NOT APPLY to the M variant in this camera.
 
-2. **ROM bootloader probe** (1 hour, free):
-   - HK32F030 inherits STM32F030 ROM bootloader at `0x1FFFEC00`.
-   - Pull BOOT0 high + brief reset, then send `0x7F` to USART1 at 115200 8E1.
-   - If ACK `0x79` comes back, bootloader is reachable.  Try `Read Memory`
-     command — may bypass the app-level lock entirely.
+##### ROM bootloader path: **DEAD** ❌
 
-3. **AD3 + MOSFET voltage glitch** (multi-hour, hardware needed):
-   - P-channel MOSFET in series with HK32F VDD, gate driven by AD3 W1
-   - Sweep glitch delay (1 µs to 1 ms post-reset), width (50 ns to 2 µs)
-   - After each glitch, read SWD IDCODE.  Valid Cortex-M0 IDCODE = success.
-   - Hardware needs: P-MOSFET (AO3401 / FDV301N), 0.1Ω shunt for power profile,
-     wire/solder for in-circuit VDD modification, removal of decoupling caps.
-   - Full sweep ~1 hour at ~50 ms per glitch attempt.
+Confirmed via official Hangshun datasheet (Rev 1.2.0, 2021-11-23) + multiple
+community sources (Nerd Ralph, gbm-ii, IOsetting):
 
-If any path succeeds, dump flash with `dump_image hk32_flash.bin 0x08000000 0x4000`
-(16 KB total).  Firmware extraction would let us validate the protocol decode
-against the actual command-handling code rather than inferring from captures.
+- **No bootloader exists on this die.** Memory map skips directly from option
+  bytes at `0x1FFF_F800` to "Reserved" — no system memory region at `0x1FFF_EC00`
+  where a bootloader would live.
+- **No BOOT0 pin** exists on the TSSOP-20 package.
+- **No PA9/PA10 pins** exist either — the only PA pins are PA0 (=NRST), PA1, PA2, PA3.
+- Quote from Nerd Ralph: *"Unlike the STM32F0, it has no serial bootloader, so
+  programming has to be done via SWD."*
+
+The HK32F030 (non-M LQFP variant) DOES have a USART bootloader at `0x1FFF_EC00`,
+but that's a different chip — irrelevant to this project.
+
+##### Actual TSSOP-20 pinout (per official datasheet §6.3 Table 6-3)
+
+| Pin | Function | Pin | Function |
+|---|---|---|---|
+| 1 | PD4 | 20 | PD3 |
+| **2** | **PD5 / SWDIO** | 19 | PD2 |
+| 3 | PD6 | 18 | PD1 |
+| **4** | **NRST (=PA0)** | 17 | PC7 |
+| 5 | PA1 | 16 | PC6 |
+| 6 | PA2 | 15 | PC5 |
+| 7 | VSS | 14 | PC4 |
+| 8 | VCAP (=PD7) | 13 | PC3 |
+| **9** | **VDD / VDDA** | 12 | PB4 |
+| 10 | PA3 | **11** | **PB5 / SWCLK** |
+
+##### Specific glitch target: option-byte load at reset
+
+> ~~**[CORRECTED 2026-05-16]**~~ — superseded by entry below.  Preserved for
+> traceability — the old understanding had `DBG_CLK_CTL` at the wrong address:
+>
+> > **`DBG_CLK_CTL` lives at Flash option word `0x1FFF_F810[15:0]`**
+> > Verbatim from datasheet §3.2.2 Table 3-2: *"DBG_CLK_CTL[15:0]: When
+> > DBG_CLK_CTL equals to 0x12DE, CPU debug clock is turned off, otherwise it
+> > stays on."*
+
+**Corrected per authoritative Hangshun HK32F030M Datasheet Rev 1.2.0** (the actual
+M-variant datasheet, not the non-M one which has a different layout):
+
+- **`DBG_CLK_CTL` lives at Flash option word `0x1FFF_F814[15:0]`** (NOT `_F810`)
+- The option-word layout per §3.2.2 Table 3-2 is:
+
+  | Address | [31:16] | [15:0] |
+  |---|---|---|
+  | `0x1FFF_F800` | nUSER / USER | nRDP / RDP |
+  | `0x1FFF_F804` | nDATA1 / DATA1 | nDATA0 / DATA0 |
+  | `0x1FFF_F808` | nWRP1 / WRP1 | nWRP0 / WRP0 |
+  | `0x1FFF_F80C` | nWRP3 / WRP3 | nWRP2 / WRP2 |
+  | `0x1FFF_F810` | IWDG_INI_KEY[15:0] | IWDG_RL_IV[11:0] |
+  | **`0x1FFF_F814`** | **DBG_CLK_CTL[15:0]** | **LSI_LP_CTL[15:0]** |
+
+- Verbatim from datasheet §3.2.2: *"DBG_CLK_CTL[15:0]: When DBG_CLK_CTL equals
+  to 0x12DE, CPU debug clock is turned off, otherwise it stays on."*
+- This is a **Hangshun extension** on top of standard STM32 option byte layout —
+  gates the **debug clock** specifically (which is why even Level-0 RDP can
+  co-exist with totally non-responsive SWD)
+- **Load happens during the very first microseconds after NRST rising edge**
+
+Also worth noting from the corrected datasheet read (relevant to glitch design):
+- **POR/PDR rising-edge threshold:** 1.84V min, 1.92V typ (don't drop VDD below
+  this for long enough to trigger POR — would reset the chip cleanly without
+  glitching the option-byte fetch)
+- **Reset detection threshold:** 1.75V typ
+- **NRST build-up time `Tdelay`:** 40 µs typ
+- **Reset temporization `tRSTTEMPO`:** 1.50–4.50 ms — this is the actual
+  window between NRST rising and CPU starting to fetch option words
+- **Operating voltage:** 1.8V min, 3.6V max — so the "glitch valley" needs to
+  drop below ~1.84V briefly (POR threshold) without staying there long enough
+  to lock the chip into POR state
+
+##### M-variant peculiarities (added 2026-05-16 from authoritative datasheet)
+
+The actual chip in the camera (HK32F030**MF4P6**, TSSOP-20) differs from the
+non-M HK32F030 LQFP variants in important ways:
+
+- **Only ONE USART (USART1)** — no USART2.  Whatever debug/AF protocol activity
+  we see is all on USART1.
+- **No BOOT0 pin and no Boot mode section** in the datasheet — confirming the
+  bootloader-dead conclusion is correct.
+- **EEPROM is separate from Flash** — 448 bytes at `0x0C00_0000`, distinct
+  from the 16 KB Flash at `0x0000_0000`.  This is unusual for the Cortex-M0
+  family and likely the OEM stores calibration data (motor endstop counts,
+  iris position offsets, etc.) in EEPROM.
+- **64-bit UID** at some factory-programmed region — datasheet §3.23 mentions
+  *"To activate the boot process of the security mechanism"* as one application.
+  That phrase suggests the OEM firmware may use the UID as part of a secure
+  boot or anti-piracy check.  Not directly an attack vector but worth noting.
+- **Available packages:** SON8, TSSOP16, TSSOP20, QFN20 — no LQFP options.
+  Confirming the chip in the camera is the smallest mainstream package.
+
+Attack target is therefore very specific: glitch during the option-byte read at
+reset to corrupt the `DBG_CLK_CTL == 0x12DE` comparison.  Success leaves the
+debug clock enabled, exposing SWD.
+
+##### Updated attack priority
+
+| Path | Status | Priority |
+|---|---|---|
+| ROM bootloader probe | **DEAD** — no bootloader on this die | Skip |
+| Verify lock with AD3 SWD trace | 30 min, free | Worth doing once to confirm DBG_CLK_CTL is the culprit |
+| **AD3 + MOSFET glitch of option-byte load** | Hardware needed | **Prime target** — very specific timing window known |
+| Chip swap with fresh HK32F + our firmware | Dev boards on order | Safe Plan B |
+| Decap + UV erase of option bytes | Last resort | Risk of mass erase if RDP regression triggers |
+
+##### Other useful facts (relevant for glitch attack design)
+
+- **Erased flash reads as 0x00**, not 0xFF (Hangshun differs from STM32 here)
+- **Page size is 128 bytes**, accepts 8-bit and 16-bit writes
+- **Option byte regression triggers mass erase** if RDP is also set — so we can't
+  simply rewrite `DBG_CLK_CTL` even with SWD; that path destroys flash
+- **EEPROM cells erase faster than main flash** (4 ms vs 40 ms)
+
+##### Primary research sources
+
+- HK32F030M Datasheet v1.2.0: https://roboeq.ir/files/id/6237/name/HK32F030MF4P6-Datasheet.pdf/
+- Nerd Ralph: http://nerdralph.blogspot.com/2020/12/ and /2021/01/
+- gbm-ii errata: https://github.com/gbm-ii/HK32F030
+- IOsetting template: https://github.com/IOsetting/hk32f030m-template
+- SEGGER KB: https://kb.segger.com/HSXP_HK32F030M
+- EEVblog thread: https://www.eevblog.com/forum/microcontrollers/$0-25-hk32f030m-(cortex-m0-32mhz-16kb-2kb)/
+- For RDP attacks in general (STM32F0 family): Obermaier et al. USENIX WOOT 2017
+  "Shedding Too Much Light on a Microcontroller's Firmware Protection"
+  https://www.usenix.org/system/files/conference/woot17/woot17-paper-obermaier.pdf
+
+Extracted reference docs in repo:
+- `hk32f030m_roboeq.txt` — official HK32F030M datasheet text
+- `hk32f030_docplayer.txt` — HK32F030 (non-M) datasheet for contrast
+- `bits_n_pieces.pdf` and `.txt` — gbm-ii errata document
 
 ### Captured protocol byte patterns
 
