@@ -592,6 +592,75 @@ The two biggest things to remember:
 
 ---
 
+## 🔥🔥🔥🔥 BREAKTHROUGH 2026-05-16 (#4) — ZOOM USES OPCODE 0x60, NOT 0x86
+
+`zoominhold.csv` (12-s isolated zoom-in-hold capture, 239 AF frames decoded) reveals
+that **zoom is commanded with a completely different opcode** than pan/tilt:
+
+| Opcode B8 | Function | Frames in zoom capture |
+|---|---|---|
+| **0x60** | **ZOOM motor command** | 168 (70%) |
+| 0x1E | Init / command-start | 40 (17%) |
+| 0x86 | Pan/tilt motor (rare here — possibly AF-triggered) | 26 (11%) |
+| 0x78 | Sub-state | 3 |
+| 0x80 | Idle | 1 |
+| 0x66 | Sub-state | 1 |
+
+**Shared structure across pan/tilt (0x86) and zoom (0x60) motor commands**:
+
+| Byte | Pan/tilt (0x86) | Zoom (0x60) | Role |
+|---|---|---|---|
+| B0–B7 | sync `06 66 00 60 80 66 E6 80` | same | sync header |
+| B8 | 0x86 | **0x60** | **opcode = which subsystem to drive** |
+| B9 | 0x80 (constant) | 0x80 (constant) | sub-opcode (common) |
+| B10–B14 | variable | variable | payload (direction/speed/position) |
+| B15 | 0x00 | **{0x00, 0x06, 0x1E, 0x80}** ← new in zoom | zoom-specific flag |
+| B16 | 0x1E (motor moving) | {0x00, 0x1E} | motor-active flag (zoom toggles) |
+| B17 | 0x00 | **{0x00, 0x1E}** ← new in zoom | unknown zoom flag |
+| B18 | 0x00 | **{many values}** ← high variance only in zoom | zoom position counter? |
+| B19 | variable | variable | position/state |
+
+### Example frames
+
+```
+utd  (tilt up/down):    06 66 00 60 80 66 E6 80 | 86 80 F8 78 00 00 06 00 1E 00 00 80
+dlr  (pan right):       06 66 00 60 80 66 E6 80 | 86 80 66 9E 00 E6 66 00 1E 00 00 E0
+zoom-op-0x60 (zoom in): 06 66 00 60 80 66 E6 80 | 60 80 9E 00 FE 98 66 00 1E 00 00 00
+zoom-op-0x86 (during zoom):
+                        06 66 00 60 80 66 E6 80 | 86 80 F8 7E 00 78 78 06 00 1E 00 00
+```
+
+### Updated full opcode dictionary
+
+| B8 opcode | Seen where | Inferred role |
+|---|---|---|
+| **0x80** | Boot phases 1-4 (steady idle), zoom (1×) | **Idle heartbeat / no-op** |
+| **0x86** | utd 100%, dlr 100%, zoom 11% | **Pan/tilt motor command** |
+| **0x60** | Zoom-in 70% | **Zoom motor command** |
+| **0x1E** | Boot init, zoom 17% | **Command start / motor enable / init** |
+| 0x18 | Home seek (boot) | Boot motor command |
+| 0x06, 0x00, 0xE0, 0xE6, 0xF8, 0x66, 0x78, 0x9E | Boot home-seek sub-phases, rare in motion | Sub-state / specific motor steps |
+
+### What this means for the OpenIPC daemon
+
+Implementing the daemon now requires TWO command families (not one):
+- `tx_pan_tilt(direction, speed)` → emits opcode-0x86 frames
+- `tx_zoom(direction, speed)` → emits opcode-0x60 frames
+- Optional `tx_focus(...)` → opcode unknown yet — will be revealed by focus captures
+
+Plus the protocol probably needs an init/start sequence using opcode 0x1E before
+the actual motor command frames flow.
+
+### Next captures to disambiguate further
+
+The 4 isolated tilt captures (uphold/upclick/downhold5sec/downclick) were exported
+as Raw Data (GB-sized) and didn't decode in this session.  When re-exported as
+Raw Events, those will pin down which byte = direction vs which = click-vs-hold.
+
+Plus the previously-listed: zoom out, focus near, focus far, idle 30 sec, IR toggle.
+
+---
+
 ## 🔥🔥🔥 BREAKTHROUGH 2026-05-16 (#3) — MULTI-CAPTURE COMPARATIVE DECODE
 
 After two single-action captures (`upthendown.csv` = ups-then-downs sequence;

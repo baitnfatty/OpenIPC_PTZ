@@ -1,6 +1,6 @@
 # MC800S PTZ Reverse-Engineering — Handoff Document
 
-**Last updated:** 2026-05-16
+**Last updated:** 2026-05-16 (zoom opcode 0x60 discovered)
 **Project:** Reverse-engineer the JideTech MC800S PTZ camera so OpenIPC can drive
 zoom, focus, pan, tilt, IR LEDs, and the IR-cut filter without the stock proprietary
 firmware.
@@ -168,8 +168,9 @@ The AF UART (R2 RED/BLACK, 115200 8N1) carries 20-byte frames:
 | B8 | When seen | Inferred role |
 |---|---|---|
 | 0x80 | Boot phases 1-4 (idle middle of full capture) | **Idle heartbeat** |
-| 0x86 | utd + dlr captures (commanded motion entire time) | **Motor command** |
-| 0x1E | Boot init (frames 0-1) | First boot command (zoom-to-zero?) |
+| 0x86 | utd 100%, dlr 100%, zoom 11% | **Pan/tilt motor command** |
+| **0x60** | **zoom-in-hold 70%** *(new 2026-05-16)* | **Zoom motor command** |
+| 0x1E | Boot init (frames 0-1), zoom 17% | Command start / motor enable / init |
 | 0x18 | Home seek loop | Boot motor command |
 | 0x06, 0x00, 0xE0, 0xE6, 0xF8, 0x66, 0x78, 0x9E, etc. | Boot home-seek phase | Specific sub-commands |
 
@@ -396,7 +397,8 @@ most recent change is always at the top of the log.
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-05-16 | Added Section 0 (amendment process) and Section 10 (this change log); created CLAUDE.md with project-wide rules for keeping HANDOFF.md current across sessions | *(this commit)* |
+| 2026-05-16 | **Zoom opcode 0x60 discovered** — `zoominhold.csv` decode shows zoom uses a different opcode than pan/tilt (0x86). Opcode dictionary expanded in Section 2.5 + system map breakthrough #4. New tool `wf_rawdata_uart.py` added for streaming Raw Data format. | *(this commit)* |
+| 2026-05-16 | Added Section 0 (amendment process) and Section 10 (this change log); created CLAUDE.md with project-wide rules for keeping HANDOFF.md current across sessions | [`1f6c7f4`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/1f6c7f4) |
 | 2026-05-16 | Initial HANDOFF.md creation — captured project state through opcode 0x86 mapping, white-wire 9600 ASCII discovery, and the two single-action captures (`utd`, `dlr`) | [`abe16fa`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/abe16fa) |
 
 ---
