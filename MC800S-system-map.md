@@ -612,8 +612,22 @@ different opcodes**, not just different frame counts:
 
 **Click action sequence (inferred from opcode timeline)**:
 1. Send brief 0x60 burst (22 frames) — the actual "move zoom one step" command
-2. Switch to 0x78 (decel) — 74 frames of coast-down telemetry
+2. Switch to 0x78 (decel?) — 74 frames of coast-down/limit telemetry
 3. Settle through 0x7E (46) → 0x80 (idle, 25) → done
+
+> ⚠️ **Alternative hypothesis (user-flagged 2026-05-16)**: 0x78/0x7E might NOT be
+> generic decel codes — they could be **end-of-travel / limit-reached** notifications.
+> The zoom click capture may have been done when the lens was at or near the
+> telephoto limit, in which case:
+> - The 22 frames of 0x60 = HK32F tried to move the motor
+> - The 74 frames of 0x78 = motor refused / hit endstop / telemetry reporting
+>   "can't move further in this direction"
+> - 0x7E = related limit-state code
+>
+> **Discriminating test**: do a zoom click capture starting from the WIDE end
+> (well away from the telephoto limit), and another starting MID-RANGE.  If
+> 0x78/0x7E still dominate at mid-range, they're generic decel codes.  If they
+> only appear at the limit (telephoto), they're limit-detection codes.
 
 **Hold action sequence**:
 1. Send 0x1E init frames (40)

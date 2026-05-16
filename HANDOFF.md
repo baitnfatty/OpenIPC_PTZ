@@ -170,8 +170,15 @@ The AF UART (R2 RED/BLACK, 115200 8N1) carries 20-byte frames:
 | 0x80 | Boot idle, zoom-click 13% | **Idle heartbeat / motor-stopped** |
 | 0x86 | utd 100%, dlr 100%, zoom 11% | **Pan/tilt motor command** |
 | 0x60 | zoom-in-HOLD 70%, zoom-in-CLICK 11% | **Zoom motor command (sustained drive)** |
-| **0x78** | **zoom-click 38%** *(new 2026-05-16)* | **Motor decelerating / coast-down** (dominant during click follow-through) |
-| **0x7E** | **zoom-click 24%** *(new 2026-05-16)* | **Motor settling state** (related to 0x78) |
+| **0x78** | **zoom-click 38%** *(new 2026-05-16)* | **Motor decel/coast-down OR end-of-travel limit** ⚠ ambiguous — see note below |
+| **0x7E** | **zoom-click 24%** *(new 2026-05-16)* | **Settling state OR limit-reached** ⚠ ambiguous |
+
+> ⚠ **0x78/0x7E interpretation uncertain.**  The zoom-click capture may have
+> been taken while the lens was at/near the telephoto endstop.  In that case,
+> 0x78/0x7E would represent **"can't move further"** notifications rather than
+> generic decel.  Discriminate by re-capturing zoom click from the wide end of
+> travel (well away from limit) — if 0x78/0x7E still dominate, they're general
+> decel codes; if not, they're limit-detection codes.
 | 0x1E | Boot init, zoom-HOLD 17%, zoom-CLICK 0% | Command start / motor enable / init |
 | 0x18 | Home seek loop | Boot motor command |
 | 0x06, 0x00, 0xE0, 0xE6, 0xF8, 0x66, 0x9E, etc. | Boot home-seek phase, rare in motion | Specific sub-commands |
@@ -406,7 +413,8 @@ most recent change is always at the top of the log.
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-05-16 | **Zoom click vs hold structurally different** — `zoominclick.csv` shows click introduces opcodes 0x78 (decel) and 0x7E (settle); HOLD is sustained 0x60, CLICK is brief 0x60 burst bracketed by 0x78/0x7E. Also: B9=0x80 (hold) vs B9=0x00 (click) on 0x60 frames suggests B9 is the press-type sub-opcode. | *(this commit)* |
+| 2026-05-16 | **Flagged 0x78/0x7E interpretation as ambiguous** — user noted the zoom-click capture might have been at the telephoto endstop, in which case 0x78/0x7E are limit-reached codes, not generic decel. Added discriminator test (zoom click from wide end). Updated both Section 2.5 and system map breakthrough #5. | *(this commit)* |
+| 2026-05-16 | **Zoom click vs hold structurally different** — `zoominclick.csv` shows click introduces opcodes 0x78 (decel) and 0x7E (settle); HOLD is sustained 0x60, CLICK is brief 0x60 burst bracketed by 0x78/0x7E. Also: B9=0x80 (hold) vs B9=0x00 (click) on 0x60 frames suggests B9 is the press-type sub-opcode. | [`d6b6306`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/d6b6306) |
 | 2026-05-16 | **Zoom opcode 0x60 discovered** — `zoominhold.csv` decode shows zoom uses a different opcode than pan/tilt (0x86). Opcode dictionary expanded in Section 2.5 + system map breakthrough #4. New tool `wf_rawdata_uart.py` added for streaming Raw Data format. | [`574bb22`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/574bb22) |
 | 2026-05-16 | Added Section 0 (amendment process) and Section 10 (this change log); created CLAUDE.md with project-wide rules for keeping HANDOFF.md current across sessions | [`1f6c7f4`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/1f6c7f4) |
 | 2026-05-16 | Initial HANDOFF.md creation — captured project state through opcode 0x86 mapping, white-wire 9600 ASCII discovery, and the two single-action captures (`utd`, `dlr`) | [`abe16fa`](https://github.com/baitnfatty/OpenIPC_PTZ/commit/abe16fa) |
