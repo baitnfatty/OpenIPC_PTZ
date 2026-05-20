@@ -81,6 +81,17 @@ var DMA_REG_COUNT = 20;
 var IWDG_BASE = 0x40003000;
 var IWDG_REG_COUNT = 5;
 
+// TIM2 (the ONLY active timer — APB1ENR bit 0 = 1)
+var TIM2_BASE = 0x40000000;
+var TIM2_REG_COUNT = 20;            // same layout as TIM3
+
+// Cortex-M0 system peripherals (PPB region 0xE000xxxx)
+var NVIC_ISER   = 0xE000E100;      // 1 word: which IRQs are enabled
+var NVIC_ISPR   = 0xE000E180;      // 1 word: which IRQs are pending
+var NVIC_IPR    = 0xE000E400;      // 8 words: interrupt priorities
+var SYSTICK_BASE = 0xE000E010;     // 3 words: CSR, RVR, CVR
+var SCB_BASE    = 0xE000ED00;      // 5 words: CPUID, ICSR, RSVD, AIRCR, SCR (VTOR at +0x08)
+
 var DUMP_PATH = "C:/Users/matth/investigate/sram_periph_dump.txt";
 var WRAP_WORDS = 256;               // Auto-increment wraps at 1KB
 
@@ -669,13 +680,54 @@ function main() {
     File(DUMP_PATH).write(dump);
     print("");
 
+    // ===== 17. TIM2 (the ONLY active timer!) =====
+    print("=== TIM2 (APB1ENR bit0=1, ACTIVE) ===");
+    reInitAP();
+    dump += readPeriphRegs(TIM2_BASE, TIM2_REG_COUNT, "TIM2",
+        ["CR1", "CR2", "SMCR", "DIER", "SR", "EGR",
+         "CCMR1", "CCMR2", "CCER", "CNT", "PSC", "ARR",
+         "RCR", "CCR1", "CCR2", "CCR3", "CCR4", "BDTR", "DCR", "DMAR"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 18. NVIC (interrupt enables + priorities) =====
+    print("=== NVIC (Interrupt Controller) ===");
+    reInitAP();
+    dump += readPeriphRegs(NVIC_ISER, 1, "NVIC_ISER (IRQ enable)",
+        ["ISER0"]);
+    dump += readPeriphRegs(NVIC_ISPR, 1, "NVIC_ISPR (IRQ pending)",
+        ["ISPR0"]);
+    // IPR: 8 words = 32 priority slots (1 byte each)
+    dump += readPeriphRegs(NVIC_IPR, 8, "NVIC_IPR (IRQ priorities)",
+        ["IPR0 (IRQ0-3)", "IPR1 (IRQ4-7)", "IPR2 (IRQ8-11)", "IPR3 (IRQ12-15)",
+         "IPR4 (IRQ16-19)", "IPR5 (IRQ20-23)", "IPR6 (IRQ24-27)", "IPR7 (IRQ28-31)"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 19. SysTick =====
+    print("=== SysTick ===");
+    reInitAP();
+    dump += readPeriphRegs(SYSTICK_BASE, 3, "SysTick",
+        ["CSR", "RVR", "CVR"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 20. SCB (System Control Block) =====
+    print("=== SCB (CPUID, VTOR, etc.) ===");
+    reInitAP();
+    dump += readPeriphRegs(SCB_BASE, 5, "SCB",
+        ["CPUID", "ICSR", "VTOR", "AIRCR", "SCR"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
     // ===== Summary =====
     print("##############################################");
     print("##  DUMP COMPLETE: " + DUMP_PATH);
     print("##  SRAM:    " + (sramWords.length * 4) + " / " + (SRAM_WORDS * 4) + " bytes");
     print("##  EEPROM:  " + (eepromWords.length * 4) + " / " + (EEPROM_WORDS * 4) + " bytes");
-    print("##  Peripherals: GPIO A/B/C/D, USART1, TIM1/3/14/16/17,");
+    print("##  Peripherals: GPIO A/B/C/D, USART1, TIM1/2/3/14/16/17,");
     print("##    SPI1, I2C1, ADC, RCC, SYSCFG, EXTI, DMA, IWDG, FLASH_IF, DBGMCU");
+    print("##  System: NVIC (ISER+ISPR+IPR), SysTick, SCB (CPUID+VTOR)");
     print("##  NOTE: AP reinit between every region. SRAM+EEPROM read first.");
     print("##############################################");
 }

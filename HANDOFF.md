@@ -112,7 +112,7 @@ return `0xAA` — same RDP protection.
 
 | Region | Bytes | Result |
 |--------|-------|--------|
-| **SRAM** | 3072 / 4096 | ✅ 75% read (0x20000000-0x20000BFF). Last 1KB fails — active stack area, bus contention |
+| **SRAM** | **4096 / 4096** | ✅ **Complete** (intermittent bus contention at 0x20000C00 on some runs; succeeded on final run) |
 | **EEPROM** | 448 / 448 | Read succeeded but all 0xAA — RDP-protected like flash |
 | **Peripheral regs** | All readable | ✅ GPIO A-D, USART1, TIM1/3/14/16/17, SPI1, I2C1, ADC, RCC, SYSCFG, EXTI, IWDG, FLASH_IF, DBGMCU |
 | **DMA** | 0 | ❌ Clock disabled (AHBENR bit 0 = 0) — firmware doesn't use DMA |
@@ -127,11 +127,13 @@ return `0xAA` — same RDP protection.
 - **PD1-PD4 = GPIO Output** — more motor/control pins
 - **PD5 = Alternate Function with pull-up** — possibly SWD or secondary function
 - **APB2ENR = 0x4000** → only USART1 clocked. **No second hardware UART exists.**
-- **The 115200 AF UART to the SoC is software bit-banged** — confirmed by absence of any other UART peripheral clock
-- **APB1ENR = 0x01** → TIM2 clock enabled (but TIM2 registers not in the dump — may be used for bit-bang timing)
-- **All timer registers read zero** — no hardware PWM used for motors
-- **IWDG not configured** (default values: RLR = 0x0FFF, KR = 0). Firmware's "Watch Dog :Enable" banner refers to software watchdog logic, not hardware IWDG
-- **No SPI, I2C, or ADC active** — firmware is very simple
+- **The 115200 AF UART to the SoC is software bit-banged** — confirmed by absence of any other UART peripheral clock. Uses tight delay loops (~46 CPU cycles per bit at 5.33 MHz), NOT timer interrupts.
+- **TIM2 is the ONLY active timer**: PSC=0, ARR=3333 → **1600 Hz** interrupt. This is the **motor step base timer**. Combined with step profile (8,8,8,6,6,6,4,4,4): slowest = 200 steps/sec, fastest = 400 steps/sec — ideal range for 24BYJ48 steppers.
+- **Only 2 NVIC interrupts enabled**: IRQ 15 (TIM2) + IRQ 27 (USART1). All default priority. Extremely simple interrupt structure.
+- **SysTick running at 333 Hz** (RVR=15999, 3ms period). General-purpose tick for delay functions.
+- **VTOR = 0x00000000** — vector table at flash base (not relocated to SRAM). CPUID = ARM Cortex-M0 r0p0.
+- **IWDG not configured** (default values: RLR = 0x0FFF, KR = 0). Firmware's "Watch Dog :Enable" banner refers to software watchdog logic, not hardware IWDG.
+- **No SPI, I2C, ADC, or DMA active** — firmware is very simple
 - **Clock: HSI 32 MHz / 6 = 5.33 MHz**, zero flash wait states, no PLL
 
 ### Key findings from SRAM
