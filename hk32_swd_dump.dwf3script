@@ -1,0 +1,683 @@
+// hk32_swd_dump.dwf3script
+// Dump HK32F030M memory via SWD bit-bang on AD3.
+// Run while debug port is unlocked (after successful glitch).
+// Reads option bytes first (~5 sec), then full flash (~15 min).
+// Progress saved incrementally — partial dump survives interruption.
+//
+// REQUIRES: StaticIO instrument open.
+
+if (!('StaticIO' in this)) throw "Open StaticIO instrument!";
+
+// ========== CONFIG ==========
+var FLASH_START    = 0x08000000;
+var FLASH_WORDS    = 4096;          // 16KB / 4
+var EEPROM_START   = 0x0C000000;
+var EEPROM_WORDS   = 112;           // 448 bytes / 4
+var OPT_START      = 0x1FFFF800;
+var OPT_WORDS      = 8;             // 32 bytes
+var EXPECTED_IDCODE = 0x0BB11477;
+
+// SRAM: 4KB at 0x20000000
+var SRAM_START     = 0x20000000;
+var SRAM_WORDS     = 1024;          // 4KB / 4
+
+// HK32F030M peripherals (base addresses, read key config registers)
+// GPIO: each port has MODER, OTYPER, OSPEEDR, PUPDR, IDR, ODR, BSRR, LCKR, AFRL, AFRH
+var GPIOA_BASE = 0x48000000;
+var GPIOB_BASE = 0x48000400;
+var GPIOC_BASE = 0x48000800;
+var GPIOD_BASE = 0x48000C00;
+var GPIO_REG_COUNT = 10;            // 10 registers per port (0x00-0x24)
+
+// USART1
+var USART1_BASE = 0x40013800;
+var USART_REG_COUNT = 10;           // CR1..BRR = 0x00-0x24 (10 words)
+
+// TIM1 (advanced), TIM3, TIM14, TIM16, TIM17
+var TIM1_BASE  = 0x40012C00;
+var TIM3_BASE  = 0x40000400;
+var TIM14_BASE = 0x40002000;
+var TIM16_BASE = 0x40014400;
+var TIM17_BASE = 0x40014800;
+var TIM_REG_COUNT = 20;             // 0x00-0x4C (20 words, covers key regs)
+
+// RCC (clock config)
+var RCC_BASE = 0x40021000;
+var RCC_REG_COUNT = 12;             // CR..CFGR3 = 0x00-0x2C
+
+// SYSCFG
+var SYSCFG_BASE = 0x40010000;
+var SYSCFG_REG_COUNT = 8;
+
+// DBGMCU
+var DBGMCU_BASE = 0x40015800;
+var DBGMCU_REG_COUNT = 3;           // IDCODE, CR, APB_FZ
+
+// SPI1
+var SPI1_BASE = 0x40013000;
+var SPI_REG_COUNT = 10;
+
+// I2C1
+var I2C1_BASE = 0x40005400;
+var I2C_REG_COUNT = 10;
+
+// ADC
+var ADC_BASE = 0x40012400;
+var ADC_REG_COUNT = 20;
+
+// EXTI
+var EXTI_BASE = 0x40010400;
+var EXTI_REG_COUNT = 6;
+
+// FLASH interface (tells us RDP status, flash unlock state)
+var FLASH_IF_BASE = 0x40022000;
+var FLASH_IF_REG_COUNT = 8;         // ACR..OBR = 0x00-0x1C
+
+// DMA
+var DMA_BASE = 0x40020000;
+var DMA_REG_COUNT = 20;
+
+// IWDG
+var IWDG_BASE = 0x40003000;
+var IWDG_REG_COUNT = 5;
+
+var DUMP_PATH = "C:/Users/matth/investigate/sram_periph_dump.txt";
+var WRAP_WORDS = 256;               // Auto-increment wraps at 1KB
+
+// ========== STATICIO SETUP ==========
+StaticIO.Channel0.Mode.text = "I/Os";
+StaticIO.Channel0.DIO0.Mode.text = "Switch";
+StaticIO.Channel0.DIO0.Switch.text = "TS";
+StaticIO.Channel0.DIO0.value = 2;        // SWDIO hi-Z
+StaticIO.Channel0.DIO1.Mode.text = "Switch";
+StaticIO.Channel0.DIO1.Switch.text = "PP";
+StaticIO.Channel0.DIO1.value = 0;        // SWCLK LOW
+StaticIO.Channel0.DIO2.Mode.text = "Switch";
+StaticIO.Channel0.DIO2.Switch.text = "PP";
+StaticIO.Channel0.DIO2.value = 1;        // NRST HIGH (chip running)
+StaticIO.Channel0.DIO3.Mode.text = "Switch";
+StaticIO.Channel0.DIO3.Switch.text = "PP";
+StaticIO.Channel0.DIO3.value = 0;        // Glitch OFF
+StaticIO.config();
+print("All 4 DIO pins configured. NRST held HIGH.");
+
+// ========== SWD PRIMITIVES ==========
+
+function swdClk() {
+    StaticIO.Channel0.DIO1.value = 1;
+    StaticIO.config();
+    StaticIO.Channel0.DIO1.value = 0;
+    StaticIO.config();
+}
+
+function swdWriteBit(b) {
+    StaticIO.Channel0.DIO0.value = b ? 1 : 0;
+    StaticIO.Channel0.DIO1.value = 1;
+    StaticIO.config();
+    StaticIO.Channel0.DIO1.value = 0;
+    StaticIO.config();
+}
+
+function swdReadBit() {
+    StaticIO.Channel0.DIO0.value = 2;
+    StaticIO.Channel0.DIO1.value = 1;
+    StaticIO.config();
+    var val = StaticIO.Channel0.DIO0.Input.value;
+    StaticIO.Channel0.DIO1.value = 0;
+    StaticIO.config();
+    return val;
+}
+
+function swdLineReset() {
+    StaticIO.Channel0.DIO0.value = 1;
+    StaticIO.config();
+    for (var i = 0; i < 56; i++) swdClk();
+}
+
+function swdJtagToSwd() {
+    var seq = 0xE79E;
+    for (var i = 0; i < 16; i++) swdWriteBit((seq >> i) & 1);
+}
+
+// ========== SWD TRANSACTIONS ==========
+
+// Raw SWD write: apndp=0 for DP, 1 for AP
+function swdWrite(apndp, addr, data) {
+    var a2 = (addr >> 2) & 1;
+    var a3 = (addr >> 3) & 1;
+    var parity = apndp ^ 0 ^ a2 ^ a3;
+    var header = 1 | (apndp << 1) | (0 << 2) | (a2 << 3) | (a3 << 4) |
+                 (parity << 5) | (0 << 6) | (1 << 7);
+
+    for (var i = 0; i < 8; i++) swdWriteBit((header >> i) & 1);
+
+    // Turnaround host->target
+    StaticIO.Channel0.DIO0.value = 2;
+    StaticIO.config();
+    swdClk();
+
+    // Read ACK
+    var ack = 0;
+    for (var i = 0; i < 3; i++) ack |= (swdReadBit() << i);
+
+    // Turnaround target->host
+    StaticIO.Channel0.DIO0.value = 0;
+    StaticIO.config();
+    swdClk();
+
+    if (ack != 1) {
+        swdWriteBit(0); swdWriteBit(0);
+        return ack;
+    }
+
+    // 32-bit data + parity
+    var par = 0;
+    for (var i = 0; i < 32; i++) {
+        var b = (data >>> i) & 1;
+        swdWriteBit(b);
+        par ^= b;
+    }
+    swdWriteBit(par);
+    swdWriteBit(0); swdWriteBit(0);
+    return 1;
+}
+
+// Raw SWD read: returns {ack, data} or {ack} on failure
+function swdRead(apndp, addr) {
+    var a2 = (addr >> 2) & 1;
+    var a3 = (addr >> 3) & 1;
+    var parity = apndp ^ 1 ^ a2 ^ a3;
+    var header = 1 | (apndp << 1) | (1 << 2) | (a2 << 3) | (a3 << 4) |
+                 (parity << 5) | (0 << 6) | (1 << 7);
+
+    for (var i = 0; i < 8; i++) swdWriteBit((header >> i) & 1);
+
+    // Turnaround
+    StaticIO.Channel0.DIO0.value = 2;
+    StaticIO.config();
+    swdClk();
+
+    // Read ACK
+    var ack = 0;
+    for (var i = 0; i < 3; i++) ack |= (swdReadBit() << i);
+
+    if (ack != 1) {
+        StaticIO.Channel0.DIO0.value = 0;
+        StaticIO.config();
+        swdClk(); swdClk();
+        return { ack: ack, data: null };
+    }
+
+    // Read 32-bit data
+    var data = 0;
+    for (var i = 0; i < 32; i++) {
+        if (swdReadBit()) data |= (1 << i);
+    }
+    swdReadBit(); // parity
+
+    // Turnaround back
+    StaticIO.Channel0.DIO0.value = 0;
+    StaticIO.config();
+    swdClk();
+    swdWriteBit(0); swdWriteBit(0);
+
+    return { ack: 1, data: data };
+}
+
+// Read with retry (handles WAIT)
+function swdReadRetry(apndp, addr) {
+    for (var r = 0; r < 5; r++) {
+        var result = swdRead(apndp, addr);
+        if (result.ack == 1) return result.data;
+        if (result.ack == 2) continue;  // WAIT, retry
+        return null;  // FAULT or other
+    }
+    return null;
+}
+
+// Write with retry
+function swdWriteRetry(apndp, addr, data) {
+    for (var r = 0; r < 5; r++) {
+        var ack = swdWrite(apndp, addr, data);
+        if (ack == 1) return true;
+        if (ack == 2) continue;  // WAIT
+        return false;
+    }
+    return false;
+}
+
+// ========== DEBUG PORT INIT ==========
+
+function debugInit() {
+    print("Initializing SWD debug port...");
+    print("  DIO0(SWDIO)=TS  DIO1(SWCLK)=PP  DIO2(NRST)=HIGH  DIO3(GLT)=LOW");
+
+    // Try IDCODE read up to 3 times
+    for (var attempt = 0; attempt < 3; attempt++) {
+        swdLineReset();
+        swdJtagToSwd();
+        swdLineReset();
+        swdWriteBit(0); swdWriteBit(0);
+
+        var r = swdRead(0, 0x0);
+        print("  IDCODE attempt " + (attempt+1) + ": ACK=" + r.ack +
+              " data=" + (r.data !== null ? "0x" + pad8(r.data >>> 0) : "null"));
+        if (r.ack == 1 && r.data !== null) break;
+        wait(0.5);
+    }
+    if (r.ack != 1 || r.data === null) {
+        print("FAIL: No ACK after 3 attempts. ACK=" + r.ack);
+        print("  ACK=0/7: no target response (locked or NRST low)");
+        print("  ACK=2: WAIT (target busy)");
+        print("  ACK=4: FAULT (protocol error)");
+        return false;
+    }
+    var idcode = r.data >>> 0;
+    print("IDCODE: 0x" + pad8(idcode));
+    if (idcode != (EXPECTED_IDCODE >>> 0)) {
+        print("WARNING: Unexpected IDCODE (expected 0x0BB11477)");
+    }
+
+    // Clear any errors
+    swdWrite(0, 0x0, 0x1E);  // DP ABORT: clear all error flags
+
+    // Power up debug
+    if (!swdWriteRetry(0, 0x4, 0x50000000)) {
+        print("FAIL: Can't write CTRL/STAT");
+        return false;
+    }
+
+    // Poll for power-up ACK
+    // Use right-shift to avoid JS signed 32-bit comparison bug with 0xA0000000
+    for (var i = 0; i < 20; i++) {
+        var stat = swdReadRetry(0, 0x4);
+        if (stat === null) { print("FAIL: Can't read CTRL/STAT"); return false; }
+        var top4 = (stat >>> 28) & 0xF;
+        if ((top4 & 0xA) == 0xA) {
+            print("Debug powered up. CTRL/STAT=0x" + pad8(stat >>> 0));
+            break;
+        }
+        if (i == 19) {
+            print("FAIL: Power-up timeout. CTRL/STAT=0x" + pad8(stat >>> 0));
+            return false;
+        }
+    }
+
+    // Select AP 0, bank 0
+    if (!swdWriteRetry(0, 0x8, 0x00000000)) {
+        print("FAIL: Can't write SELECT");
+        return false;
+    }
+
+    // CSW: 32-bit word access, auto-increment
+    if (!swdWriteRetry(1, 0x0, 0x00000012)) {
+        print("FAIL: Can't write AP CSW");
+        return false;
+    }
+
+    print("AHB-AP ready: word access, auto-increment");
+    return true;
+}
+
+// ========== AP RE-INIT (clear errors, re-select AP, re-write CSW) ==========
+// Call this between major memory regions to prevent accumulated state corruption.
+
+function reInitAP() {
+    // 1. Clear all sticky error flags in DP ABORT
+    swdWrite(0, 0x0, 0x1E);
+
+    // 2. Re-select AP 0, bank 0
+    if (!swdWriteRetry(0, 0x8, 0x00000000)) {
+        print("  reInitAP: SELECT write failed");
+        return false;
+    }
+
+    // 3. Re-write CSW: 32-bit word access, auto-increment
+    if (!swdWriteRetry(1, 0x0, 0x00000012)) {
+        print("  reInitAP: CSW write failed");
+        return false;
+    }
+
+    return true;
+}
+
+// ========== MEMORY READ ==========
+
+function readBlock(startAddr, wordCount, label) {
+    var words = [];
+    var blocks = Math.ceil(wordCount / WRAP_WORDS);
+    var totalRead = 0;
+
+    for (var b = 0; b < blocks; b++) {
+        var blockAddr = (startAddr + b * WRAP_WORDS * 4) >>> 0;
+        var blockLen = Math.min(WRAP_WORDS, wordCount - totalRead);
+
+        // Set TAR (with one retry after AP reinit)
+        if (!swdWriteRetry(1, 0x4, blockAddr)) {
+            print("  TAR write failed at 0x" + pad8(blockAddr) + ", reinit AP and retry...");
+            if (!reInitAP()) {
+                print("FAIL: AP reinit failed");
+                return words;
+            }
+            if (!swdWriteRetry(1, 0x4, blockAddr)) {
+                print("FAIL: TAR write at 0x" + pad8(blockAddr) + " (after reinit)");
+                return words;
+            }
+        }
+
+        // Pipelined AP read: first read is discarded
+        swdReadRetry(1, 0xC);
+
+        // Read blockLen-1 words from DRW
+        for (var i = 0; i < blockLen - 1; i++) {
+            var w = swdReadRetry(1, 0xC);
+            if (w === null) {
+                print("FAIL: Read error at 0x" + pad8(blockAddr + i * 4));
+                return words;
+            }
+            words.push(w >>> 0);
+        }
+
+        // Last word from RDBUFF
+        var last = swdReadRetry(0, 0xC);
+        if (last === null) {
+            print("FAIL: RDBUFF error at end of block 0x" + pad8(blockAddr));
+            return words;
+        }
+        words.push(last >>> 0);
+        totalRead += blockLen;
+
+        if (label) {
+            var pct = Math.round(totalRead / wordCount * 100);
+            print("[" + label + "] " + pct + "% (" + totalRead + "/" + wordCount + " words)");
+        }
+
+        if (!wait(0)) {
+            print("Script stopped by user. Saving partial dump.");
+            return words;
+        }
+    }
+    return words;
+}
+
+// ========== FORMAT ==========
+
+function pad8(n) {
+    var s = (n >>> 0).toString(16);
+    while (s.length < 8) s = "0" + s;
+    return s;
+}
+
+function pad2(n) {
+    var s = n.toString(16);
+    if (s.length < 2) s = "0" + s;
+    return s;
+}
+
+function formatWords(words, baseAddr) {
+    var out = "";
+    for (var i = 0; i < words.length; i++) {
+        var addr = (baseAddr + i * 4) >>> 0;
+        var w = words[i];
+        out += pad8(addr) + ": " +
+               pad2(w & 0xFF) + " " +
+               pad2((w >> 8) & 0xFF) + " " +
+               pad2((w >> 16) & 0xFF) + " " +
+               pad2((w >> 24) & 0xFF) + "\n";
+    }
+    return out;
+}
+
+// ========== PERIPHERAL READER ==========
+// Reads a small register block and prints each register with name labels
+
+function readPeriphRegs(base, count, name, regNames) {
+    var words = readBlock(base, count, null);
+    if (words.length == 0) {
+        print("  [" + name + "] Read failed at 0x" + pad8(base));
+        return "";
+    }
+    var out = "# " + name + " (0x" + pad8(base) + ")\n";
+    for (var i = 0; i < words.length; i++) {
+        var addr = (base + i * 4) >>> 0;
+        var label = (regNames && i < regNames.length) ? regNames[i] : "";
+        var line = pad8(addr) + ": " +
+                   pad2(words[i] & 0xFF) + " " +
+                   pad2((words[i] >> 8) & 0xFF) + " " +
+                   pad2((words[i] >> 16) & 0xFF) + " " +
+                   pad2((words[i] >> 24) & 0xFF);
+        if (label) line += "  ; " + label;
+        out += line + "\n";
+        print("  " + line);
+    }
+    return out + "\n";
+}
+
+// ========== MAIN ==========
+
+function main() {
+    print("==============================================");
+    print("  HK32F030M SRAM + PERIPHERAL DUMP");
+    print("  (RDP active — flash returns 0xAA. Reading");
+    print("   SRAM + peripheral registers instead.)");
+    print("==============================================");
+    print("");
+
+    if (!debugInit()) {
+        print("");
+        print("Could not initialize debug port.");
+        return;
+    }
+    print("");
+
+    var dump = "# HK32F030M SRAM + Peripheral Register Dump (v2 — with AP reinit)\n";
+    dump += "# Date: " + new Date().toString() + "\n";
+    dump += "# RDP is active (0x00) — flash reads blocked.\n";
+    dump += "# SRAM and peripherals are readable.\n\n";
+
+    // ===== 1. SRAM FIRST (most valuable — read before anything can corrupt AP) =====
+    print("=== SRAM (0x20000000, 4KB) ===");
+    print("Reading SRAM FIRST — live program state: stack, variables, buffers.");
+    var t0 = Date.now();
+    var sramWords = readBlock(SRAM_START, SRAM_WORDS, "SRAM");
+    var secs = Math.round((Date.now() - t0) / 1000);
+    print("SRAM: " + sramWords.length + "/" + SRAM_WORDS + " words in " + secs + "s");
+
+    if (sramWords.length > 0) {
+        dump += "# SRAM (0x20000000) - live program state\n";
+        dump += formatWords(sramWords, SRAM_START);
+        dump += "\n";
+        print("First 16 SRAM words:");
+        for (var i = 0; i < Math.min(16, sramWords.length); i++) {
+            print("  0x" + pad8((SRAM_START + i * 4) >>> 0) + " = 0x" + pad8(sramWords[i]));
+        }
+    } else {
+        dump += "# SRAM: READ FAILED (RDP may block SRAM on HK32)\n\n";
+    }
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 2. EEPROM (second most valuable) =====
+    print("=== EEPROM (0x0C000000, 448 bytes) ===");
+    reInitAP();
+    var eepromWords = readBlock(EEPROM_START, EEPROM_WORDS, "EEPROM");
+    print("EEPROM: " + eepromWords.length + "/" + EEPROM_WORDS + " words");
+    if (eepromWords.length > 0) {
+        dump += "# EEPROM (0x0C000000)\n";
+        dump += formatWords(eepromWords, EEPROM_START);
+        dump += "\n";
+        for (var i = 0; i < Math.min(16, eepromWords.length); i++) {
+            print("  0x" + pad8((EEPROM_START + i * 4) >>> 0) + " = 0x" + pad8(eepromWords[i]));
+        }
+    } else {
+        dump += "# EEPROM: READ FAILED\n\n";
+    }
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 3. OPTION BYTES (confirm state) =====
+    print("=== OPTION BYTES ===");
+    reInitAP();
+    dump += readPeriphRegs(OPT_START, OPT_WORDS, "Option Bytes",
+        ["RDP/nRDP", "USER/nUSER", "DATA0/nDATA0", "DATA1/nDATA1",
+         "IWDG_KEY/RL", "DBG_CLK_CTL", "UID_0?", "UID_1?"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 4. FLASH INTERFACE REGS (shows RDP/OBR status) =====
+    print("=== FLASH INTERFACE (shows RDP level) ===");
+    reInitAP();
+    dump += readPeriphRegs(FLASH_IF_BASE, FLASH_IF_REG_COUNT, "FLASH_IF",
+        ["ACR", "KEYR", "OPTKEYR", "SR", "CR", "AR", "RSVD", "OBR"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 5. DBGMCU =====
+    print("=== DBGMCU ===");
+    reInitAP();
+    dump += readPeriphRegs(DBGMCU_BASE, DBGMCU_REG_COUNT, "DBGMCU",
+        ["IDCODE", "CR", "APB_FZ"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 6. RCC (clocks — tells us what's enabled) =====
+    print("=== RCC (Clock Configuration) ===");
+    reInitAP();
+    dump += readPeriphRegs(RCC_BASE, RCC_REG_COUNT, "RCC",
+        ["CR", "CFGR", "CIR", "APB2RSTR", "APB1RSTR", "AHBENR",
+         "APB2ENR", "APB1ENR", "BDCR", "CSR", "AHBRSTR", "CFGR2"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 7. GPIO (all ports — pin modes, AF selection) =====
+    var gpioNames = ["MODER", "OTYPER", "OSPEEDR", "PUPDR", "IDR",
+                     "ODR", "BSRR", "LCKR", "AFRL", "AFRH"];
+
+    print("=== GPIOA ===");
+    reInitAP();
+    dump += readPeriphRegs(GPIOA_BASE, GPIO_REG_COUNT, "GPIOA", gpioNames);
+    File(DUMP_PATH).write(dump);
+
+    print("=== GPIOB ===");
+    reInitAP();
+    dump += readPeriphRegs(GPIOB_BASE, GPIO_REG_COUNT, "GPIOB", gpioNames);
+    File(DUMP_PATH).write(dump);
+
+    print("=== GPIOC ===");
+    reInitAP();
+    dump += readPeriphRegs(GPIOC_BASE, GPIO_REG_COUNT, "GPIOC", gpioNames);
+    File(DUMP_PATH).write(dump);
+
+    print("=== GPIOD ===");
+    reInitAP();
+    dump += readPeriphRegs(GPIOD_BASE, GPIO_REG_COUNT, "GPIOD", gpioNames);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 8. USART1 =====
+    print("=== USART1 ===");
+    reInitAP();
+    dump += readPeriphRegs(USART1_BASE, USART_REG_COUNT, "USART1",
+        ["CR1", "CR2", "CR3", "BRR", "GTPR", "RTOR", "RQR", "ISR", "ICR", "RDR"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 9. TIMERS =====
+    var timNames = ["CR1", "CR2", "SMCR", "DIER", "SR", "EGR",
+                    "CCMR1", "CCMR2", "CCER", "CNT", "PSC", "ARR",
+                    "RCR", "CCR1", "CCR2", "CCR3", "CCR4", "BDTR", "DCR", "DMAR"];
+
+    print("=== TIM1 (Advanced) ===");
+    reInitAP();
+    dump += readPeriphRegs(TIM1_BASE, TIM_REG_COUNT, "TIM1", timNames);
+
+    print("=== TIM3 ===");
+    reInitAP();
+    dump += readPeriphRegs(TIM3_BASE, TIM_REG_COUNT, "TIM3", timNames);
+
+    print("=== TIM14 ===");
+    reInitAP();
+    dump += readPeriphRegs(TIM14_BASE, 8, "TIM14", timNames);
+
+    print("=== TIM16 ===");
+    reInitAP();
+    dump += readPeriphRegs(TIM16_BASE, 8, "TIM16", timNames);
+
+    print("=== TIM17 ===");
+    reInitAP();
+    dump += readPeriphRegs(TIM17_BASE, 8, "TIM17", timNames);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 10. SPI1 =====
+    print("=== SPI1 ===");
+    reInitAP();
+    dump += readPeriphRegs(SPI1_BASE, SPI_REG_COUNT, "SPI1",
+        ["CR1", "CR2", "SR", "DR", "CRCPR", "RXCRCR", "TXCRCR", "I2SCFGR", "I2SPR", "RSVD"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 11. I2C1 =====
+    print("=== I2C1 ===");
+    reInitAP();
+    dump += readPeriphRegs(I2C1_BASE, I2C_REG_COUNT, "I2C1",
+        ["CR1", "CR2", "OAR1", "OAR2", "TIMINGR", "TIMEOUTR", "ISR", "ICR", "PECR", "RXDR"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 12. ADC =====
+    print("=== ADC ===");
+    reInitAP();
+    dump += readPeriphRegs(ADC_BASE, ADC_REG_COUNT, "ADC",
+        ["ISR", "IER", "CR", "CFGR1", "CFGR2", "SMPR", "RSVD", "RSVD",
+         "TR", "RSVD", "CHSELR", "RSVD", "RSVD", "RSVD", "RSVD", "RSVD",
+         "RSVD", "RSVD", "RSVD", "DR"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 13. SYSCFG =====
+    print("=== SYSCFG ===");
+    reInitAP();
+    dump += readPeriphRegs(SYSCFG_BASE, SYSCFG_REG_COUNT, "SYSCFG",
+        ["CFGR1", "RSVD", "EXTICR1", "EXTICR2", "EXTICR3", "EXTICR4", "CFGR2", "RSVD"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 14. EXTI =====
+    print("=== EXTI ===");
+    reInitAP();
+    dump += readPeriphRegs(EXTI_BASE, EXTI_REG_COUNT, "EXTI",
+        ["IMR", "EMR", "RTSR", "FTSR", "SWIER", "PR"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 15. DMA =====
+    print("=== DMA ===");
+    reInitAP();
+    dump += readPeriphRegs(DMA_BASE, DMA_REG_COUNT, "DMA",
+        ["ISR", "IFCR", "CCR1", "CNDTR1", "CPAR1", "CMAR1",
+         "RSVD", "CCR2", "CNDTR2", "CPAR2", "CMAR2", "RSVD",
+         "CCR3", "CNDTR3", "CPAR3", "CMAR3", "RSVD", "CCR4", "CNDTR4", "CPAR4"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== 16. IWDG =====
+    print("=== IWDG ===");
+    reInitAP();
+    dump += readPeriphRegs(IWDG_BASE, IWDG_REG_COUNT, "IWDG",
+        ["KR", "PR", "RLR", "SR", "WINR"]);
+    File(DUMP_PATH).write(dump);
+    print("");
+
+    // ===== Summary =====
+    print("##############################################");
+    print("##  DUMP COMPLETE: " + DUMP_PATH);
+    print("##  SRAM:    " + (sramWords.length * 4) + " / " + (SRAM_WORDS * 4) + " bytes");
+    print("##  EEPROM:  " + (eepromWords.length * 4) + " / " + (EEPROM_WORDS * 4) + " bytes");
+    print("##  Peripherals: GPIO A/B/C/D, USART1, TIM1/3/14/16/17,");
+    print("##    SPI1, I2C1, ADC, RCC, SYSCFG, EXTI, DMA, IWDG, FLASH_IF, DBGMCU");
+    print("##  NOTE: AP reinit between every region. SRAM+EEPROM read first.");
+    print("##############################################");
+}
+
+main();

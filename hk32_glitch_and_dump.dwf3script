@@ -1,0 +1,773 @@
+// hk32_glitch_and_dump.dwf3script
+// All-in-one: voltage glitch + immediate memory dump via AD3 SWD bit-bang.
+// No ST-Link needed. No script switching. Glitch hits -> flash dumps automatically.
+//
+// HARDWARE:
+//   DIO0 -> SWDIO    DIO1 -> SWCLK
+//   DIO2 -> NRST     DIO3 -> 560R -> P2N2222A base (crowbar)
+//   Scope -> VDD     GND -> board GND + P2N2222A emitter
+//   P2N2222A collector -> VDD
+//
+// REQUIRES: StaticIO + Patterns open. DIO2 + DIO3 in Patterns grid.
+
+// ========== CONFIG ==========
+// 10 MHz pattern clock = 100ns per sample.
+// Gives fine width control (100ns-2.5us) AND precise glitch positioning.
+// At boot clock 5.33MHz (188ns/cycle), 100ns resolution < 1 instruction cycle.
+var PAT_FREQ        = 10000000;  // 10 MHz = 100ns/sample
+
+// 3-PHASE 2D SWEEP: delay (when) x width (how long)
+//
+// Phase 1: NARROW PULSES near known-good 750us delay (data-corruption mechanism)
+//   Target: corrupt the EEPROM read of DBG_CLK_CTL so 0x12DE reads as anything else.
+//   Short sharp spikes — don't need to cross POR threshold, just glitch the bus.
+var P1_START_US  = 400;
+var P1_END_US    = 900;
+var P1_STEP_US   = 15;
+var P1_REPEATS   = 3;
+var P1_WIDTHS    = [1, 2, 3, 5];  // 100ns, 200ns, 300ns, 500ns
+
+// Phase 2: WIDE PULSES near known-good 750us delay (POR-based mechanism)
+//   Target: pull VDD below 1.80V POR threshold long enough to reset debug-lock latch.
+var P2_START_US  = 400;
+var P2_END_US    = 900;
+var P2_STEP_US   = 15;
+var P2_REPEATS   = 3;
+var P2_WIDTHS    = [10, 15, 20, 25];  // 1us, 1.5us, 2us, 2.5us
+
+// Phase 3: FULL RANGE sweep with best widths from both mechanisms
+var P3_START_US  = 0;
+var P3_END_US    = 4500;
+var P3_STEP_US   = 50;
+var P3_REPEATS   = 2;
+var P3_WIDTHS    = [1, 3, 5, 15, 25];  // 100ns, 300ns, 500ns, 1.5us, 2.5us
+
+var RESET_HOLD_US   = 120;
+var BOOT_WAIT_MS    = 1300;
+var EXPECTED_IDCODE = 0x0BB11477;
+
+var DUMP_PATH = "C:/Users/matth/investigate/flash_dump.txt";
+var LOG_PATH  = "C:/Users/matth/investigate/glitch_log.txt";
+
+// Memory map
+var FLASH_START  = 0x08000000;
+var FLASH_WORDS  = 4096;           // 16KB
+var EEPROM_START = 0x0C000000;
+var EEPROM_WORDS = 112;            // 448 bytes
+var OPT_START    = 0x1FFFF800;
+var OPT_WORDS    = 8;              // 32 bytes
+var WRAP_WORDS   = 256;            // Auto-increment wraps at 1KB
+
+// ========== LOGGING ==========
+var _logBuf = "";
+function log(msg) {
+    print(msg);
+    _logBuf += msg + "\n";
+    File(LOG_PATH).write(_logBuf);
+}
+
+// ========== HELPERS ==========
+function pad8(n) {
+    var s = (n >>> 0).toString(16);
+    while (s.length < 8) s = "0" + s;
+    return s;
+}
+function pad2(n) {
+    var s = n.toString(16);
+    if (s.length < 2) s = "0" + s;
+    return s;
+}
+
+// ========== SWD PRIMITIVES ==========
+
+function swdClk() {
+    StaticIO.Channel0.DIO1.value = 1;
+    StaticIO.config();
+    StaticIO.Channel0.DIO1.value = 0;
+    StaticIO.config();
+}
+
+function swdWriteBit(b) {
+    StaticIO.Channel0.DIO0.value = b ? 1 : 0;
+    StaticIO.Channel0.DIO1.value = 1;
+    StaticIO.config();
+    StaticIO.Channel0.DIO1.value = 0;
+    StaticIO.config();
+}
+
+function swdReadBit() {
+    StaticIO.Channel0.DIO0.value = 2;
+    StaticIO.Channel0.DIO1.value = 1;
+    StaticIO.config();
+    var val = StaticIO.Channel0.DIO0.Input.value;
+    StaticIO.Channel0.DIO1.value = 0;
+    StaticIO.config();
+    return val;
+}
+
+function swdLineReset() {
+    StaticIO.Channel0.DIO0.value = 1;
+    StaticIO.config();
+    for (var i = 0; i < 56; i++) swdClk();
+}
+
+function swdJtagToSwd() {
+    var seq = 0xE79E;
+    for (var i = 0; i < 16; i++) swdWriteBit((seq >> i) & 1);
+}
+
+// ========== SWD IDCODE (fast, for glitch detection) ==========
+
+function swdReadIdcode() {
+    swdLineReset();
+    swdJtagToSwd();
+    swdLineReset();
+    swdWriteBit(0); swdWriteBit(0);
+
+    var header = 0xA5;
+    for (var i = 0; i < 8; i++) swdWriteBit((header >> i) & 1);
+
+    StaticIO.Channel0.DIO0.value = 2;
+    StaticIO.config();
+    swdClk();
+
+    var ack = 0;
+    for (var i = 0; i < 3; i++) ack |= (swdReadBit() << i);
+
+    if (ack != 1) {
+        StaticIO.Channel0.DIO0.value = 0;
+        StaticIO.config();
+        swdClk(); swdClk();
+        return 0xFFFFFFFF;
+    }
+
+    var idcode = 0;
+    for (var i = 0; i < 32; i++) {
+        if (swdReadBit()) idcode |= (1 << i);
+    }
+    swdReadBit();
+
+    StaticIO.Channel0.DIO0.value = 0;
+    StaticIO.config();
+    swdClk();
+    swdWriteBit(0); swdWriteBit(0);
+
+    return idcode;
+}
+
+// ========== SWD GENERIC WRITE/READ (for memory access) ==========
+
+function swdWrite(apndp, addr, data) {
+    var a2 = (addr >> 2) & 1;
+    var a3 = (addr >> 3) & 1;
+    var parity = apndp ^ 0 ^ a2 ^ a3;
+    var header = 1 | (apndp << 1) | (0 << 2) | (a2 << 3) | (a3 << 4) |
+                 (parity << 5) | (0 << 6) | (1 << 7);
+
+    for (var i = 0; i < 8; i++) swdWriteBit((header >> i) & 1);
+
+    StaticIO.Channel0.DIO0.value = 2;
+    StaticIO.config();
+    swdClk();
+
+    var ack = 0;
+    for (var i = 0; i < 3; i++) ack |= (swdReadBit() << i);
+
+    StaticIO.Channel0.DIO0.value = 0;
+    StaticIO.config();
+    swdClk();
+
+    if (ack != 1) {
+        swdWriteBit(0); swdWriteBit(0);
+        return ack;
+    }
+
+    var par = 0;
+    for (var i = 0; i < 32; i++) {
+        var b = (data >>> i) & 1;
+        swdWriteBit(b);
+        par ^= b;
+    }
+    swdWriteBit(par);
+    swdWriteBit(0); swdWriteBit(0);
+    return 1;
+}
+
+function swdRead(apndp, addr) {
+    var a2 = (addr >> 2) & 1;
+    var a3 = (addr >> 3) & 1;
+    var parity = apndp ^ 1 ^ a2 ^ a3;
+    var header = 1 | (apndp << 1) | (1 << 2) | (a2 << 3) | (a3 << 4) |
+                 (parity << 5) | (0 << 6) | (1 << 7);
+
+    for (var i = 0; i < 8; i++) swdWriteBit((header >> i) & 1);
+
+    StaticIO.Channel0.DIO0.value = 2;
+    StaticIO.config();
+    swdClk();
+
+    var ack = 0;
+    for (var i = 0; i < 3; i++) ack |= (swdReadBit() << i);
+
+    if (ack != 1) {
+        StaticIO.Channel0.DIO0.value = 0;
+        StaticIO.config();
+        swdClk(); swdClk();
+        return { ack: ack, data: null };
+    }
+
+    var data = 0;
+    for (var i = 0; i < 32; i++) {
+        if (swdReadBit()) data |= (1 << i);
+    }
+    swdReadBit();
+
+    StaticIO.Channel0.DIO0.value = 0;
+    StaticIO.config();
+    swdClk();
+    swdWriteBit(0); swdWriteBit(0);
+
+    return { ack: 1, data: data };
+}
+
+function swdWriteRetry(apndp, addr, data) {
+    for (var r = 0; r < 5; r++) {
+        var ack = swdWrite(apndp, addr, data);
+        if (ack == 1) return true;
+        if (ack == 2) continue;
+        return false;
+    }
+    return false;
+}
+
+function swdReadRetry(apndp, addr) {
+    for (var r = 0; r < 5; r++) {
+        var result = swdRead(apndp, addr);
+        if (result.ack == 1) return result.data;
+        if (result.ack == 2) continue;
+        return null;
+    }
+    return null;
+}
+
+// ========== MEMORY DUMP ==========
+
+function dumpInit() {
+    // Already have IDCODE confirmed. Power up and configure AHB-AP.
+    log("[DUMP] Powering up debug domain...");
+
+    // Clear errors
+    swdWrite(0, 0x0, 0x1E);
+
+    // Power up
+    if (!swdWriteRetry(0, 0x4, 0x50000000)) {
+        log("[DUMP] FAIL: Can't write CTRL/STAT");
+        return false;
+    }
+
+    // Poll power-up ACK
+    // Check bits 31 (CSYSPWRUPACK) and 29 (CDBGPWRUPACK) using right-shift
+    // to avoid JavaScript signed 32-bit comparison bugs with large hex values.
+    for (var i = 0; i < 20; i++) {
+        var stat = swdReadRetry(0, 0x4);
+        if (stat === null) { log("[DUMP] FAIL: Can't read CTRL/STAT"); return false; }
+        var top4 = (stat >>> 28) & 0xF;  // bits 31:28
+        if ((top4 & 0xA) == 0xA) {       // bit 31 (0x8) + bit 29 (0x2) both set
+            log("[DUMP] CTRL/STAT=0x" + pad8(stat >>> 0) + " (powered up)");
+            break;
+        }
+        if (i == 19) {
+            log("[DUMP] FAIL: Power-up timeout. CTRL/STAT=0x" + pad8(stat >>> 0));
+            return false;
+        }
+    }
+
+    // Select AP 0, bank 0
+    if (!swdWriteRetry(0, 0x8, 0x00000000)) {
+        log("[DUMP] FAIL: Can't write SELECT");
+        return false;
+    }
+
+    // CSW: 32-bit word, auto-increment
+    if (!swdWriteRetry(1, 0x0, 0x00000012)) {
+        log("[DUMP] FAIL: Can't write AP CSW");
+        return false;
+    }
+
+    log("[DUMP] AHB-AP ready.");
+    return true;
+}
+
+function readBlock(startAddr, wordCount, label) {
+    var words = [];
+    var blocks = Math.ceil(wordCount / WRAP_WORDS);
+    var totalRead = 0;
+
+    for (var b = 0; b < blocks; b++) {
+        var blockAddr = (startAddr + b * WRAP_WORDS * 4) >>> 0;
+        var blockLen = Math.min(WRAP_WORDS, wordCount - totalRead);
+
+        if (!swdWriteRetry(1, 0x4, blockAddr)) {
+            log("[DUMP] FAIL: TAR write at 0x" + pad8(blockAddr));
+            return words;
+        }
+
+        // Pipeline: first AP read discarded
+        swdReadRetry(1, 0xC);
+
+        for (var i = 0; i < blockLen - 1; i++) {
+            var w = swdReadRetry(1, 0xC);
+            if (w === null) {
+                log("[DUMP] Read error at 0x" + pad8(blockAddr + i * 4));
+                return words;
+            }
+            words.push(w >>> 0);
+        }
+
+        // Last word from RDBUFF
+        var last = swdReadRetry(0, 0xC);
+        if (last === null) {
+            log("[DUMP] RDBUFF error at block 0x" + pad8(blockAddr));
+            return words;
+        }
+        words.push(last >>> 0);
+        totalRead += blockLen;
+
+        if (label) {
+            var pct = Math.round(totalRead / wordCount * 100);
+            log("[" + label + "] " + pct + "% (" + (totalRead * 4) + "/" + (wordCount * 4) + " bytes)");
+        }
+
+        if (!wait(0)) return words;
+    }
+    return words;
+}
+
+function formatWords(words, baseAddr) {
+    var out = "";
+    for (var i = 0; i < words.length; i++) {
+        var addr = (baseAddr + i * 4) >>> 0;
+        var w = words[i];
+        out += pad8(addr) + ": " +
+               pad2(w & 0xFF) + " " +
+               pad2((w >> 8) & 0xFF) + " " +
+               pad2((w >> 16) & 0xFF) + " " +
+               pad2((w >> 24) & 0xFF) + "\n";
+    }
+    return out;
+}
+
+function dumpAllMemory() {
+    log("");
+    log("##############################################");
+    log("##  STARTING MEMORY DUMP                    ##");
+    log("##############################################");
+    log("");
+
+    if (!dumpInit()) {
+        log("[DUMP] Debug init failed. Port may have closed.");
+        return false;
+    }
+
+    var dump = "# HK32F030M Memory Dump\n";
+    dump += "# Date: " + new Date().toString() + "\n\n";
+
+    // 1. Option bytes (~2 sec)
+    log("[DUMP] Reading option bytes (0x1FFFF800, 32 bytes)...");
+    var optWords = readBlock(OPT_START, OPT_WORDS, null);
+    if (optWords.length > 0) {
+        for (var i = 0; i < optWords.length; i++) {
+            var addr = (OPT_START + i * 4) >>> 0;
+            log("  0x" + pad8(addr) + " = 0x" + pad8(optWords[i]));
+        }
+        if (optWords.length >= 6) {
+            var dbg = optWords[5];
+            log("  >>> DBG_CLK_CTL (0x1FFFF814) = 0x" + pad8(dbg));
+        }
+        dump += "# Option bytes\n" + formatWords(optWords, OPT_START) + "\n";
+        File(DUMP_PATH).write(dump);
+        log("[DUMP] Option bytes saved.");
+    } else {
+        log("[DUMP] FAIL: Can't read option bytes. Aborting dump.");
+        return false;
+    }
+
+    // 2. Test flash read (first 16 words = vector table)
+    log("[DUMP] Testing flash read (vector table)...");
+    var testWords = readBlock(FLASH_START, 16, null);
+    if (testWords.length > 0) {
+        var names = ["SP_init", "Reset", "NMI", "HardFault"];
+        for (var i = 0; i < Math.min(4, testWords.length); i++) {
+            log("  " + names[i] + ": 0x" + pad8(testWords[i]));
+        }
+    } else {
+        log("[DUMP] FAIL: Can't read flash.");
+        return false;
+    }
+
+    // 3. Full flash (~15 min)
+    log("[DUMP] Reading full flash (16KB). ~15 minutes...");
+    var t0 = Date.now();
+    var flashWords = readBlock(FLASH_START, FLASH_WORDS, "FLASH");
+    var secs = Math.round((Date.now() - t0) / 1000);
+    log("[DUMP] Flash: " + flashWords.length + "/" + FLASH_WORDS + " words in " + secs + "s");
+    dump += "# Flash (0x08000000)\n" + formatWords(flashWords, FLASH_START) + "\n";
+    File(DUMP_PATH).write(dump);
+
+    // 4. EEPROM (~20 sec)
+    log("[DUMP] Reading EEPROM (448 bytes)...");
+    var eepromWords = readBlock(EEPROM_START, EEPROM_WORDS, "EEPROM");
+    log("[DUMP] EEPROM: " + eepromWords.length + "/" + EEPROM_WORDS + " words");
+    dump += "# EEPROM (0x0C000000)\n" + formatWords(eepromWords, EEPROM_START) + "\n";
+    File(DUMP_PATH).write(dump);
+
+    log("");
+    log("##############################################");
+    log("##  DUMP COMPLETE: " + DUMP_PATH);
+    log("##  Flash:  " + (flashWords.length * 4) + " / " + (FLASH_WORDS * 4) + " bytes");
+    log("##  EEPROM: " + (eepromWords.length * 4) + " / " + (EEPROM_WORDS * 4) + " bytes");
+    log("##############################################");
+    return true;
+}
+
+// ========== INCREMENTAL DUMP (chunk-per-glitch) ==========
+// Reads one 1KB block per successful glitch. Survives re-locks.
+// Build a memory map as a flat list of {region, offset, words_remaining}.
+// Each glitch: init debug, read one 256-word block, save, advance.
+
+var REGIONS = [
+    { name: "OPT",    start: OPT_START,    words: OPT_WORDS },
+    { name: "FLASH",  start: FLASH_START,  words: FLASH_WORDS },
+    { name: "EEPROM", start: EEPROM_START, words: EEPROM_WORDS }
+];
+
+// Incremental state: persists across glitch attempts
+var incRegion = 0;     // current region index
+var incOffset = 0;     // words already read in current region
+var incDump = "# HK32F030M Incremental Memory Dump\n# Date: " + new Date().toString() + "\n\n";
+var incTotalWords = OPT_WORDS + FLASH_WORDS + EEPROM_WORDS;  // 4216
+var incWordsRead = 0;
+var incChunks = 0;
+var triedFullDump = false;
+
+function incReadOneChunk() {
+    // Are we done?
+    if (incRegion >= REGIONS.length) return "ALL_DONE";
+
+    var reg = REGIONS[incRegion];
+    var remaining = reg.words - incOffset;
+    if (remaining <= 0) {
+        // Advance to next region
+        incRegion++;
+        incOffset = 0;
+        return incReadOneChunk();
+    }
+
+    // Init debug port
+    if (!dumpInit()) {
+        return "INIT_FAIL";
+    }
+
+    // Read one block (up to 256 words = 1KB)
+    var chunkSize = Math.min(WRAP_WORDS, remaining);
+    var addr = (reg.start + incOffset * 4) >>> 0;
+
+    log("[INC] Reading " + reg.name + " 0x" + pad8(addr) + " (" + chunkSize + " words)...");
+
+    // Set TAR
+    if (!swdWriteRetry(1, 0x4, addr)) {
+        log("[INC] TAR write failed");
+        return "READ_FAIL";
+    }
+
+    // Pipeline: discard first AP read
+    swdReadRetry(1, 0xC);
+
+    var words = [];
+    for (var i = 0; i < chunkSize - 1; i++) {
+        var w = swdReadRetry(1, 0xC);
+        if (w === null) {
+            log("[INC] Read error at word " + i);
+            // Save partial if we got anything
+            if (words.length > 0) break;
+            return "READ_FAIL";
+        }
+        words.push(w >>> 0);
+    }
+
+    // Last word from RDBUFF
+    if (words.length == chunkSize - 1) {
+        var last = swdReadRetry(0, 0xC);
+        if (last !== null) {
+            words.push(last >>> 0);
+        }
+    }
+
+    if (words.length == 0) return "READ_FAIL";
+
+    // Save chunk
+    incDump += formatWords(words, addr);
+    File(DUMP_PATH).write(incDump);
+
+    // Log important data
+    if (reg.name == "OPT" && incOffset == 0) {
+        for (var i = 0; i < Math.min(words.length, 8); i++) {
+            log("  OPT[" + i + "] 0x" + pad8((reg.start + i * 4) >>> 0) + " = 0x" + pad8(words[i]));
+        }
+        if (words.length >= 6) {
+            log("  >>> DBG_CLK_CTL = 0x" + pad8(words[5]));
+        }
+    }
+    if (reg.name == "FLASH" && incOffset == 0) {
+        var names = ["SP_init", "Reset", "NMI", "HardFault"];
+        for (var i = 0; i < Math.min(4, words.length); i++) {
+            log("  " + names[i] + ": 0x" + pad8(words[i]));
+        }
+    }
+
+    incOffset += words.length;
+    incWordsRead += words.length;
+    incChunks++;
+
+    var pct = Math.round(incWordsRead / incTotalWords * 100);
+    log("[INC] " + reg.name + ": " + incOffset + "/" + reg.words +
+        " words | Total: " + pct + "% (" + (incWordsRead * 4) + "/" + (incTotalWords * 4) + " bytes)" +
+        " | Chunk #" + incChunks);
+
+    // Check if region done
+    if (incOffset >= reg.words) {
+        log("[INC] " + reg.name + " COMPLETE!");
+        incDump += "\n";
+        incRegion++;
+        incOffset = 0;
+    }
+
+    // Check if all done
+    if (incRegion >= REGIONS.length) {
+        log("");
+        log("##############################################");
+        log("##  INCREMENTAL DUMP COMPLETE!              ##");
+        log("##  " + incChunks + " chunks, " + (incWordsRead * 4) + " bytes");
+        log("##  Saved: " + DUMP_PATH);
+        log("##############################################");
+        return "ALL_DONE";
+    }
+
+    return "MORE";
+}
+
+// ========== INSTRUMENT SETUP ==========
+
+if (!('StaticIO' in this)) throw "Open StaticIO!";
+if (!('Patterns' in this)) throw "Open Patterns!";
+
+StaticIO.Channel0.Mode.text = "I/Os";
+StaticIO.Channel0.DIO0.Mode.text = "Switch";
+StaticIO.Channel0.DIO0.Switch.text = "TS";
+StaticIO.Channel0.DIO0.value = 2;
+StaticIO.Channel0.DIO1.Mode.text = "Switch";
+StaticIO.Channel0.DIO1.Switch.text = "PP";
+StaticIO.Channel0.DIO1.value = 0;
+StaticIO.Channel0.DIO2.Mode.text = "LED";
+StaticIO.Channel0.DIO3.Mode.text = "LED";
+StaticIO.config();
+
+Patterns.Channels.DIO2.Output.text = "PP";
+Patterns.Channels.DIO2.Type.text = "Custom";
+Patterns.Channels.DIO2.Frequency.value = PAT_FREQ;
+Patterns.Channels.DIO2.Idle.text = "1";
+
+Patterns.Channels.DIO3.Output.text = "PP";
+Patterns.Channels.DIO3.Type.text = "Custom";
+Patterns.Channels.DIO3.Frequency.value = PAT_FREQ;
+Patterns.Channels.DIO3.Idle.text = "0";
+
+var resetSamples = Math.round(RESET_HOLD_US * PAT_FREQ / 1000000);
+var maxDelaySamples = Math.round(P3_END_US * PAT_FREQ / 1000000);
+var maxWidth = 25;  // max width we'll ever use (2.5us at 10MHz)
+var totalSamples = resetSamples + maxDelaySamples + maxWidth + 20;
+
+var nrstArr = [];
+var glitchArr = [];
+for (var i = 0; i < totalSamples; i++) {
+    nrstArr.push(i >= resetSamples ? 1 : 0);
+    glitchArr.push(0);
+}
+Patterns.Channels.DIO2.custom = nrstArr;
+
+Patterns.States.Trigger.text = "None";
+Patterns.States.Wait.value = 0;
+Patterns.States.Run.value = totalSamples / PAT_FREQ;
+Patterns.States.Repeat.value = 1;
+
+log("[INIT] Samples=" + totalSamples + " reset=" + resetSamples +
+    " (" + RESET_HOLD_US + "us) run=" + Math.round(totalSamples / PAT_FREQ * 1000000) + "us");
+
+// ========== 2D SWEEP ENGINE ==========
+// Sweeps delay x width. For each delay point, tries all widths before moving on.
+// This maximizes coverage at each timing point.
+
+function sweep2d(startUs, endUs, stepUs, widths, repeats, label) {
+    var delayPoints = Math.floor((endUs - startUs) / stepUs) + 1;
+    var totalSteps = delayPoints * widths.length * repeats;
+    var attempts = 0;
+    var prevPulseIdx = -1;
+    var prevWidth = 0;
+    var startTime = Date.now();
+
+    log("[" + label + "] delay=" + startUs + "-" + endUs + "us (step=" + stepUs + "us)");
+    log("  widths=[" + widths.join(",") + "] samples (" +
+        widths.map(function(w) { return (w * 1000000000 / PAT_FREQ) + "ns"; }).join(", ") + ")");
+    log("  repeats=" + repeats + ", total=" + totalSteps + " attempts");
+
+    for (var delay = startUs; delay <= endUs; delay += stepUs) {
+        for (var wi = 0; wi < widths.length; wi++) {
+            var width = widths[wi];
+            for (var rep = 0; rep < repeats; rep++) {
+                attempts++;
+
+                // Clear previous pulse
+                if (prevPulseIdx >= 0) {
+                    for (var w = 0; w < prevWidth; w++) glitchArr[prevPulseIdx + w] = 0;
+                }
+
+                // Set new pulse
+                var delaySamples = Math.round(delay * PAT_FREQ / 1000000);
+                var pulseIdx = resetSamples + delaySamples;
+                for (var w = 0; w < width; w++) glitchArr[pulseIdx + w] = 1;
+                prevPulseIdx = pulseIdx;
+                prevWidth = width;
+                Patterns.Channels.DIO3.custom = glitchArr;
+
+                // Fire
+                Patterns.single();
+                Patterns.wait(2);
+                Patterns.stop();
+
+                // Wait for boot
+                wait(BOOT_WAIT_MS / 1000.0);
+
+                // Check SWD
+                var idcode = swdReadIdcode() >>> 0;
+
+                if (idcode == (EXPECTED_IDCODE >>> 0)) {
+                    // First unlock? Try full dump once. After that, use incremental.
+                    if (incChunks == 0 && !triedFullDump) {
+                        log("");
+                        log("############################################");
+                        log("##  UNLOCKED! Attempting full dump...");
+                        log("##  delay=" + delay + "us  width=" + width +
+                            " (" + (width * 1000000000 / PAT_FREQ) + "ns)  rep=" + rep);
+                        log("############################################");
+                        triedFullDump = true;
+                        var ok = dumpAllMemory();
+                        if (ok) return "DUMPED";
+                        log("[!] Full dump failed. Switching to incremental mode.");
+                        log("[!] Will read one 1KB chunk per glitch from now on.");
+                    }
+
+                    // Incremental: read one chunk
+                    var chunkResult = incReadOneChunk();
+                    if (chunkResult == "ALL_DONE") return "DUMPED";
+                    if (chunkResult == "INIT_FAIL" || chunkResult == "READ_FAIL") {
+                        log("[INC] Chunk failed, will retry next glitch. (" + chunkResult + ")");
+                    }
+                    // "MORE" = chunk read OK, keep going for next chunk
+                } else if (idcode != 0xFFFFFFFF) {
+                    log("#" + attempts + " delay=" + delay + "us w=" + width +
+                        " PARTIAL: 0x" + pad8(idcode));
+                }
+
+                // Progress every 30 attempts
+                if (attempts % 30 == 0) {
+                    var elapsed = (Date.now() - startTime) / 1000;
+                    var pct = Math.round(attempts / totalSteps * 100);
+                    var eta = Math.round(elapsed / attempts * (totalSteps - attempts));
+                    log("[" + label + " " + pct + "%] #" + attempts + "/" + totalSteps +
+                        " d=" + delay + "us w=" + width +
+                        " " + Math.round(elapsed) + "s, ~" + eta + "s left");
+                }
+
+                if (!wait(0)) return "STOPPED";
+            }
+        }
+    }
+    return "DONE";
+}
+
+// ========== MAIN ==========
+
+function main() {
+    log("==============================================");
+    log("  HK32F030M GLITCH + DUMP  (10 MHz 3-PHASE)");
+    log("  PAT_FREQ = " + (PAT_FREQ/1e6) + " MHz  (100ns/sample)");
+    log("  Sweeps: delay x width x repeats");
+    log("  Glitch -> Unlock -> Dump (all automatic)");
+    log("==============================================");
+    log("Pattern buffer: " + totalSamples + " samples, reset=" +
+        resetSamples + " (" + RESET_HOLD_US + "us)");
+    log("");
+
+    // Baseline check (no glitch)
+    log("[BASELINE] Testing SWD without glitch...");
+    var baseline = swdReadIdcode() >>> 0;
+    if (baseline == (EXPECTED_IDCODE >>> 0)) {
+        log("*** ALREADY UNLOCKED! IDCODE=0x" + pad8(baseline) + " ***");
+        log("Attempting immediate dump...");
+        if (dumpAllMemory()) return;
+        log("Dump failed despite IDCODE match. Continuing to glitch...");
+    } else {
+        log("[BASELINE] Locked (0x" + pad8(baseline) + "). Starting glitch...");
+    }
+    log("");
+
+    // ---- Phase 1: Narrow pulses near 750us (data-corruption mechanism) ----
+    // Short sharp spikes to corrupt the EEPROM read of DBG_CLK_CTL.
+    // 21 delays x 4 widths x 3 reps = 252 attempts (~6 min)
+    log("============================================");
+    log("  PHASE 1: NARROW PULSES (100-500ns)");
+    log("  Mechanism: data-corruption on EEPROM read");
+    log("============================================");
+    var result = sweep2d(P1_START_US, P1_END_US, P1_STEP_US,
+                         P1_WIDTHS, P1_REPEATS, "P1-NARROW");
+    if (result == "DUMPED") { log("SUCCESS! Firmware dumped."); return; }
+    if (result == "STOPPED") { log("Stopped by user."); return; }
+    log("");
+
+    // ---- Phase 2: Wide pulses near 750us (POR-based mechanism) ----
+    // Pull VDD below 1.80V POR threshold to reset debug-lock latch.
+    // 21 delays x 4 widths x 3 reps = 252 attempts (~6 min)
+    log("============================================");
+    log("  PHASE 2: WIDE PULSES (1.0-2.5us)");
+    log("  Mechanism: POR threshold corruption");
+    log("============================================");
+    result = sweep2d(P2_START_US, P2_END_US, P2_STEP_US,
+                     P2_WIDTHS, P2_REPEATS, "P2-WIDE");
+    if (result == "DUMPED") { log("SUCCESS! Firmware dumped."); return; }
+    if (result == "STOPPED") { log("Stopped by user."); return; }
+    log("");
+
+    // ---- Phase 3: Full range sweep, both mechanisms ----
+    // Covers the whole tRSTTEMPO window (0-4500us) with representative widths.
+    // 91 delays x 5 widths x 2 reps = 910 attempts (~23 min)
+    log("============================================");
+    log("  PHASE 3: FULL RANGE (0-4500us, all widths)");
+    log("  Both mechanisms, full tRSTTEMPO window");
+    log("============================================");
+    result = sweep2d(P3_START_US, P3_END_US, P3_STEP_US,
+                     P3_WIDTHS, P3_REPEATS, "P3-FULL");
+    if (result == "DUMPED") { log("SUCCESS! Firmware dumped."); return; }
+    if (result == "STOPPED") { log("Stopped by user."); return; }
+
+    log("");
+    log("All 3 phases done. No unlock achieved.");
+    log("Suggestions:");
+    log("  - Check scope: are VDD dips visible at narrow widths (100-300ns)?");
+    log("  - If no dips at narrow widths: lower base R to 330R or 220R");
+    log("  - If dips present but no unlock: lift bypass caps near HK32F VDD");
+    log("  - Add 10R series on collector to kill the 4.5V overshoot spike");
+    log("  - Try even wider pulses: [30,40,50] samples = 3-5us");
+    log("  - Check P2N2222A C-B-E pinout (flat side facing you: E-B-C left to right)");
+}
+
+main();

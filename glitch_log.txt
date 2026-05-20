@@ -1,0 +1,50 @@
+[INIT] Samples=46245 reset=1200 (120us) run=4625us
+==============================================
+  HK32F030M GLITCH + DUMP  (10 MHz 3-PHASE)
+  PAT_FREQ = 10 MHz  (100ns/sample)
+  Sweeps: delay x width x repeats
+  Glitch -> Unlock -> Dump (all automatic)
+==============================================
+Pattern buffer: 46245 samples, reset=1200 (120us)
+
+[BASELINE] Testing SWD without glitch...
+*** ALREADY UNLOCKED! IDCODE=0x0bb11477 ***
+Attempting immediate dump...
+
+##############################################
+##  STARTING MEMORY DUMP                    ##
+##############################################
+
+[DUMP] Powering up debug domain...
+[DUMP] CTRL/STAT=0xf0000000 (powered up)
+[DUMP] AHB-AP ready.
+[DUMP] Reading option bytes (0x1FFFF800, 32 bytes)...
+  0x1ffff800 = 0x00ffff00
+  0x1ffff804 = 0x00ff00ff
+  0x1ffff808 = 0x00ff00ff
+  0x1ffff80c = 0x00ff00ff
+  0x1ffff810 = 0xffffffff
+  0x1ffff814 = 0xffffffff
+  0x1ffff818 = 0x8a70fd02
+  0x1ffff81c = 0x400033cc
+  >>> DBG_CLK_CTL (0x1FFFF814) = 0xffffffff
+[DUMP] Option bytes saved.
+[DUMP] Testing flash read (vector table)...
+  SP_init: 0xaaaaaaaa
+  Reset: 0xaaaaaaaa
+  NMI: 0xaaaaaaaa
+  HardFault: 0xaaaaaaaa
+[DUMP] Reading full flash (16KB). ~15 minutes...
+[FLASH] 6% (1024/16384 bytes)
+[FLASH] 13% (2048/16384 bytes)
+[DUMP] Read error at 0x08000a64
+[DUMP] Flash: 665/4096 words in 11s
+[DUMP] Reading EEPROM (448 bytes)...
+[DUMP] FAIL: TAR write at 0x0c000000
+[DUMP] EEPROM: 0/112 words
+
+##############################################
+##  DUMP COMPLETE: C:/Users/matth/investigate/flash_dump.txt
+##  Flash:  2660 / 16384 bytes
+##  EEPROM: 0 / 448 bytes
+##############################################

@@ -1,6 +1,6 @@
 # MC800S PTZ Reverse-Engineering — Handoff Document
 
-**Last updated:** 2026-05-16 (Corrected DBG_CLK_CTL address to `0x1FFF_F814`; bootloader-dead conclusion authoritatively confirmed from official HK32F030M datasheet Rev 1.2.0)
+**Last updated:** 2026-05-20 (Debug lock permanently destroyed via voltage glitch; SRAM dump + peripheral register analysis complete; shifting to AF protocol capture phase)
 **Project:** Reverse-engineer the JideTech MC800S PTZ camera so OpenIPC can drive
 zoom, focus, pan, tilt, IR LEDs, and the IR-cut filter without the stock proprietary
 firmware.
@@ -62,7 +62,7 @@ git checkout <old-sha> -- HANDOFF.md        # restore — only touches HANDOFF.m
 |---|---|---|
 | **SoC** | SigmaStar SSC338Q (IMA80S15 reference board) | Main processor — runs OpenIPC or stock; handles video, web UI, sends AF UART commands |
 | **Sensor** | Sony IMX415 (1/2.8", 8.4 MP, 4K UHD) | Image sensor on MIPI-CSI ribbon |
-| **Lens MCU** | Hangshun **HK32F030MF4P6** (Cortex-M0, **debug-fused via `DBG_CLK_CTL = 0x12DE`**) | Receives 115200-baud AF protocol from SoC, drives BA6208G for zoom/focus DC motors. **Cannot be read via SWD.** |
+| **Lens MCU** | Hangshun **HK32F030MF4P6** (Cortex-M0, debug lock **permanently destroyed** 2026-05-20, RDP Level 1 still active) | Receives 115200-baud AF protocol (software bit-bang) from SoC, drives BA6208G for zoom/focus DC motors. SRAM + peripheral regs readable via SWD; flash returns 0xAA (RDP). |
 | **Distro MCU** | **STC8G2K325A** (8051 family) | Drives ULN2803A for pan/tilt steppers; drives PT4115 DIM for IR LED PWM. Receives commands from HK32F. |
 | **Motor driver** | BA6208G (DC zoom/focus) + ULN2803A (steppers) | On lens board and distro board respectively |
 | **IR LED driver** | PT4115 buck constant-current LED driver | DIM pin driven by STC8G pin 28 (P1.7 hardware PWM6) via 1 kΩ series |
@@ -96,6 +96,67 @@ SoC main board (SSC338Q on IMA80S15)
 
 ---
 
+## 🔥 BREAKTHROUGH 2026-05-20 — Debug lock permanently destroyed + SRAM dumped
+
+Voltage glitch attack on the HK32F030MF4P6 using an AD3 Patterns instrument
+(P2N2222A NPN crowbar, 560Ω base resistor, DIO3 trigger) permanently corrupted
+the `DBG_CLK_CTL` EEPROM option byte at `0x1FFFF814` from `0x12DE` (locked) to
+`0xFFFF` (any value ≠ 0x12DE = unlocked). **Debug access is now permanent —
+survives power cycles. No more glitching needed.**
+
+However, **RDP Level 1 remains active** (RDP byte at `0x1FFFF800[7:0]` = 0x00,
+FLASH_IF OBR bit 1 = 1). Flash reads return `0xAAAAAAAA`. EEPROM reads also
+return `0xAA` — same RDP protection.
+
+### What we extracted
+
+| Region | Bytes | Result |
+|--------|-------|--------|
+| **SRAM** | 3072 / 4096 | ✅ 75% read (0x20000000-0x20000BFF). Last 1KB fails — active stack area, bus contention |
+| **EEPROM** | 448 / 448 | Read succeeded but all 0xAA — RDP-protected like flash |
+| **Peripheral regs** | All readable | ✅ GPIO A-D, USART1, TIM1/3/14/16/17, SPI1, I2C1, ADC, RCC, SYSCFG, EXTI, IWDG, FLASH_IF, DBGMCU |
+| **DMA** | 0 | ❌ Clock disabled (AHBENR bit 0 = 0) — firmware doesn't use DMA |
+| **Flash** | 0 useful | All 0xAA (RDP Level 1) |
+
+### Key findings from peripheral registers
+
+- **PA3 = USART1_TX (AF1)** — white wire 9600 baud console. BRR = 0x022C → 5.33 MHz / 556 = 9585 baud
+- **PA0 = Input with pull-up** — likely USART1_RX or button
+- **PB4 = AF1** — possibly timer or secondary UART-related
+- **PC3-PC7 = GPIO Output** — motor control (BA6208G + IR-cut via S5756-A2)
+- **PD1-PD4 = GPIO Output** — more motor/control pins
+- **PD5 = Alternate Function with pull-up** — possibly SWD or secondary function
+- **APB2ENR = 0x4000** → only USART1 clocked. **No second hardware UART exists.**
+- **The 115200 AF UART to the SoC is software bit-banged** — confirmed by absence of any other UART peripheral clock
+- **APB1ENR = 0x01** → TIM2 clock enabled (but TIM2 registers not in the dump — may be used for bit-bang timing)
+- **All timer registers read zero** — no hardware PWM used for motors
+- **IWDG not configured** (default values: RLR = 0x0FFF, KR = 0). Firmware's "Watch Dog :Enable" banner refers to software watchdog logic, not hardware IWDG
+- **No SPI, I2C, or ADC active** — firmware is very simple
+- **Clock: HSI 32 MHz / 6 = 5.33 MHz**, zero flash wait states, no PLL
+
+### Key findings from SRAM
+
+- **Motor step profile at 0x2000008C**: `08 08 08 06 06 06 04 04 04` — 9-byte acceleration ramp (step delays decrease: 8→6→4) for stepper motor control
+- **Stack frames with flash pointers** (0x2000044C-0x200004C4): Contains EXC_RETURN values (0xFFFFFFF1, 0xFFFFFFF9) proving nested interrupt execution. Flash function addresses extracted: `0x080005FB`, `0x08003358` (appears 4×, hot path), `0x08000883` (2×), `0x080007CB`, `0x08001BB0`, `0x080024A7`, `0x08002F0E`. USART1 base `0x40013800` on stack confirms UART handler was active.
+- **AF protocol buffer** (0x200004C4-0x20000BFC): ~1.8 KB of high-entropy data — almost certainly the TX/RX buffer for the 115200 AF protocol to/from the SoC
+- **Timer values**: 0x3E8 (1000) and 0x3E3 (995) suggest a 1-second tick timer
+
+### Glitch attack details (for reproducibility)
+
+- **Hardware**: P2N2222A NPN transistor, 560Ω base resistor, collector shorts VDD to GND
+- **Trigger**: AD3 Patterns instrument, DIO2 = NRST, DIO3 = glitch pulse
+- **Pattern rate**: 10 MHz (100 ns/sample resolution)
+- **Mechanism**: 135+ successful unlocks across a 3-phase 2D sweep (delay × width), but a JavaScript signed-integer bug in the dump script caused all dumps to fail initially. After fixing, the debug lock was already permanently destroyed — no more glitching needed.
+- **Overshoot**: VDD spikes hit ~4.5V during crowbar release (absolute max is 4.0V). This is likely what permanently corrupted the EEPROM byte. Collector damping (10Ω series resistor) recommended but not yet installed.
+
+### Scripts
+
+- **`hk32_glitch_and_dump.dwf3script`** — all-in-one 3-phase voltage glitch sweep + SWD dump. 10 MHz pattern rate, auto-detects unlock, attempts full memory dump.
+- **`hk32_swd_dump.dwf3script`** — standalone SWD dump script. Reads SRAM first (most valuable), then EEPROM, then all peripheral registers. Includes AP reinit between regions to prevent accumulated AHB-AP state corruption.
+- Output files: `sram_periph_dump.txt`, `flash_dump.txt`, `glitch_log.txt`
+
+---
+
 ## 2. What is solved
 
 ### 2.1 Hardware mapping (Phase 0) — done
@@ -112,13 +173,21 @@ Highlights:
 - The on-board SoC J6 PWM header (T1, top center, labeled `GND | PWM1 | PWM0`) is
   **physically unpopulated** — no SoC PWM is wired to anything.
 
-### 2.2 HK32F silicon lock (Phase 1) — done (negative result)
+### 2.2 HK32F silicon lock (Phase 1) — BYPASSED [SUPERSEDED 2026-05-20 — see "BREAKTHROUGH 2026-05-20" above]
 
-HK32F030MF4P6 has `DBG_CLK_CTL = 0x12DE` set, which gates the debug clock at
-silicon level. Confirmed unreachable via CubeProgrammer (8 frequencies), OpenOCD
-(3 configs), and HLA-mode SWD. **No software-only path to dump the firmware
-exists.** Plan B: hot-air swap a fresh chip with our own firmware (dev boards
-already on order).
+> ~~**[CORRECTED 2026-05-20]**~~ — superseded by breakthrough section above. Preserved for traceability:
+>
+> HK32F030MF4P6 has `DBG_CLK_CTL = 0x12DE` set, which gates the debug clock at
+> silicon level. Confirmed unreachable via CubeProgrammer (8 frequencies), OpenOCD
+> (3 configs), and HLA-mode SWD. **No software-only path to dump the firmware
+> exists.** Plan B: hot-air swap a fresh chip with our own firmware (dev boards
+> already on order).
+
+**2026-05-20 update:** Voltage glitch attack permanently destroyed the debug lock
+(DBG_CLK_CTL now reads 0xFFFF). SWD access is fully functional. However, RDP
+Level 1 (flash readout protection) remains active — flash and EEPROM return 0xAA.
+SRAM and peripheral registers are readable. See breakthrough section above for
+full details.
 
 ### 2.3 IR LED PWM path (Phase 3) — RESOLVED
 
@@ -312,6 +381,11 @@ With these, the full PTZ command dictionary will be unambiguous.
 ### Analysis
 - **`decode_summary.py`** — runs all decoders and produces a one-page summary
 
+### Glitch attack + SWD dump (AD3 WaveForms scripts)
+- **`hk32_glitch_and_dump.dwf3script`** — 3-phase 2D voltage-glitch sweep (delay × width × repeats) + SWD bit-bang dump. Fires patterns at 10 MHz via DIO2 (NRST) and DIO3 (glitch). On unlock detection, attempts full memory dump. Includes incremental chunk-per-glitch mode.
+- **`hk32_swd_dump.dwf3script`** — standalone SWD dump via StaticIO bit-bang. Reads SRAM first, then EEPROM, then all peripheral registers with AP reinit between each region. Output → `sram_periph_dump.txt`.
+- **`hk32_glitch_sweep_v3.dwf3script`** — earlier glitch sweep variant (reference only)
+
 ### LA hardware
 - **`nucleo_la/`** — Nucleo F411RE flashed with LogicalRust (Rust-based SUMP firmware, 5 MS/s, 8 channels). Now superseded by the AD3 (Digilent Analog Discovery 3) at 6.25 MS/s × 16 channels for richer captures.
 
@@ -343,12 +417,13 @@ With these, the full PTZ command dictionary will be unambiguous.
 | Phase | Description | Status |
 |---|---|---|
 | 0 | Hardware mapping | ✅ done |
-| 1 | HK32F SWD dump attempt | ✅ done (negative — chip is locked) |
+| 1a | HK32F debug lock bypass | ✅ **DONE** — lock permanently destroyed via voltage glitch (DBG_CLK_CTL = 0xFFFF) |
+| 1b | HK32F memory extraction | ✅ done — 3KB SRAM + all peripheral registers dumped. Flash/EEPROM blocked by RDP Level 1 (returns 0xAA). Enough data extracted for OpenIPC integration. |
 | 2a | AF UART command capture (R2 RED) | ✅ working — clean frames |
 | 2b | AF UART telemetry capture (R2 BLACK) | ❌ hardware issue (line at mid-rail) |
 | 2c | White-wire capture | ✅ corrected — line is 9600 ASCII |
 | 3 | IR LED PWM path | ✅ resolved (STC8G P1.7 → PT4115 DIM via 1 kΩ) |
-| 4a | AF opcode dictionary | 🚧 partial — 0x86, 0x80, 0x1E, 0x18 mapped; full dictionary needs 8 more captures |
+| 4a | AF opcode dictionary | 🚧 partial — 0x86, 0x80, 0x1E, 0x18 mapped; **next: full protocol capture with AD3 logic analyzer** |
 | 4b | White-wire ASCII command syntax | ⏳ TBD (need longer capture with commanded actions to see post-boot traffic) |
 | 5 | OpenIPC `mc800s-ptzd` daemon | ⏳ blocked on Phase 4 |
 | 6 | End-to-end PTZ verification under OpenIPC | ⏳ blocked on Phase 5 |
@@ -358,31 +433,42 @@ With these, the full PTZ command dictionary will be unambiguous.
 
 ## 7. The next ~2 hours of work, prioritized
 
-1. **Take the 8 remaining single-action captures listed above.** Each ~20 sec.
-   Save each as Raw Events CSV (smallest, fastest to process).
+**Context (2026-05-20):** Debug lock is permanently gone. We have the full MCU
+peripheral configuration and 3KB of SRAM. The AF UART is confirmed as 115200 baud,
+software bit-banged on the MCU side. The missing piece is the **AF protocol frame
+format** — we need live captures of actual PTZ commands.
 
-2. **Run the wf_events_uart pipeline on each:**
+1. **AF protocol capture with AD3 logic analyzer.** Hook the AD3's logic channels
+   onto the AF UART lines (R2 RED = SoC→MCU, R2 BLACK = MCU→SoC). Use the stock
+   camera web UI to send PTZ commands while recording. Save as Raw Events CSV.
+   Key captures needed:
+   - Idle (30 sec, no action)
+   - Pan left hold, pan right hold
+   - Tilt up hold, tilt down hold
+   - Zoom in hold, zoom out hold
+   - IR toggle (cover/uncover CDS)
+
+2. **Decode captured frames** with the existing pipeline:
    ```
-   python wf_events_uart.py panLeft_hold.csv --target 1 115200 panLeft.bin
-   python aj_frame_parser.py panLeft.bin
+   python wf_events_uart.py <capture>.csv --target 1 115200 <output>.bin
+   python aj_frame_parser.py <output>.bin
    ```
-   Repeat for each capture.
 
-3. **Cross-correlate the decoded frames** to build the full byte-by-byte
-   meaning of opcode 0x86. Should be able to identify which byte = axis,
-   which = direction, which = speed.
+3. **Cross-correlate** to build the full byte-by-byte command dictionary.
 
-4. **Verify the idle baseline**: `idle_30sec.csv` should produce frames with
-   B8 = 0x80, not 0x86.
+4. **Fix the AF telemetry line** — try probing at HK32F's TX pad directly
+   instead of mid-cable. The R2 BLACK line reads 1.48V mid-rail.
 
-5. **Test sending a frame back to the camera**: once we have a confirmed
-   "pan right at speed X" frame, transmit it via a USB-serial adapter into
-   the AF UART (R2 BLACK side, with the camera disconnected from its SoC).
-   The HK32F should respond by driving the motor. This is the proof-of-concept
-   for the OpenIPC daemon.
+5. **Test sending a frame** to the camera via USB-serial adapter into R2 BLACK.
+   If the HK32F drives a motor, that's the proof-of-concept for the OpenIPC daemon.
 
-6. **Fix the AF telemetry line** — try probing at HK32F's TX pad directly
-   instead of mid-cable.
+**Deferred (low priority):**
+- CPU halt to read last 1KB of SRAM (0x20000C00-0x20000FFF) — marginal value,
+  risk of motor driver damage if outputs are HIGH when halted
+- RDP removal (write RDP=0xA5 to option bytes) — triggers mass erase, destroys
+  firmware. Only useful if we plan to write replacement firmware from scratch.
+- Install 10Ω collector damping resistor on glitch transistor (prevents 4.5V
+  overshoot, but glitching is no longer needed)
 
 ---
 
@@ -416,6 +502,7 @@ most recent change is always at the top of the log.
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-05-20 | **🔥 Debug lock permanently destroyed + SRAM/peripheral dump complete.** Voltage glitch attack (AD3 Patterns, P2N2222A crowbar, 10 MHz) permanently corrupted DBG_CLK_CTL from 0x12DE→0xFFFF. SWD now works after power cycle. RDP Level 1 still active (flash/EEPROM return 0xAA). Extracted 3KB/4KB SRAM (active stack area blocked last 1KB), all peripheral registers. Key findings: AF UART is software bit-banged (no second hardware USART), motor step profile found in SRAM (08-08-08-06-06-06-04-04-04), flash function addresses recovered from stack frames, IWDG not used, no DMA/SPI/I2C/PWM. Fixed critical JS signed-integer comparison bug in SWD scripts. Added AP reinit between memory regions to fix TAR write failures. Phase 1 complete. Shifting to AF protocol capture. | *(this commit)* |
 | 2026-05-16 | **Corrected `DBG_CLK_CTL` address** + bootloader-dead conclusion authoritatively confirmed. User provided the actual HK32F030M datasheet (Rev 1.2.0, 2021-11-23) which corrects two things: **(1)** `DBG_CLK_CTL[15:0]` lives at flash option word `0x1FFF_F814`, not `0x1FFF_F810` as previously stated (the `_F810` slot is actually `IWDG_INI_KEY[15:0] / IWDG_RL_IV[11:0]`).  Glitch attack target updated to the correct address. **(2)** The previous research conclusion that the M-variant has no ROM bootloader is now confirmed end-to-end from the authoritative Hangshun document: no "Boot mode" section, no BOOT0 pin, no system memory region in the memory map, only USART1 (no USART2). The "boot message" we see on the white wire at 9600 baud ASCII is the **application firmware's** printf banner ("version :1.20 / lens :LH3X / Watch Dog :Enable"), not a ROM bootloader protocol. System map updated with non-destructive correction markers per CLAUDE.md Rule 2. Also added M-variant peculiarities section (only USART1, separate EEPROM region, 64-bit UID, four available packages SON8/TSSOP16/TSSOP20/QFN20). | *(this commit)* |
 | 2026-05-16 | **B15 = direction byte (confirmed)** + opcode hypothesis revision. New batch of 13 isolated captures (panL/R, tiltU/D, speeds, zoom variants, iris) shows: B15=0x06 → LEFT/UP, B15=0x60 → RIGHT/DOWN (same encoding across both axes). **However the previous "B8 = subsystem opcode" theory is wrong** — short isolated captures show 0x98 dominant in pan/tilt/iris captures (which earlier theory called "focus settling state"). Revised hypothesis: **B8 = motor phase / frame type** (not subsystem), with previous "100% 0x86" captures being only the sustained-continuous-motion phase. User clarified focus0002/0003 from prior batch were focus NEAR vs focus FAR (focus near has more motor travel → 0x9E dominant; focus far has more iris compensation → 0x1E dominant). User confirmed no probe changes between batches. | *(this commit)* |
 | 2026-05-16 | **🎯 Iris=0x1E + Focus=0x9E discovered** — batch of 9 isolated captures (focus×3, iris×2, zoom+AF×4) decoded. Both iris captures are 100% opcode 0x1E, proving 0x1E is the IRIS opcode (not "init/start" as previously thought — that was just because iris fires at boot). Focus captures dominated by new opcode 0x9E (44.6% in focus0002). 0x98 also appears in focus/zoom+AF combos as a focus sub-state. Full subsystem opcode map: pan/tilt=0x86, zoom=0x60, iris=0x1E, focus=0x9E, idle=0x80. **0x86 reclassified back from "general lens motor" to "pan/tilt specific"** — the AF-during-zoom traffic is actually B8=0x9E (focus), not B8=0x86. Section 2.5 + system map updated. **NOTE 2026-05-16 evening**: subsequent batch revised this — B8 is more likely motor PHASE not subsystem. | [`cbe3c6d`](https://github.com/baitnfatty/openipc_ptz/commit/cbe3c6d) |
