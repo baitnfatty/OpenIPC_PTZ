@@ -1,7 +1,0 @@
-Source: hk32115200_redeven
-File size: 57746 bytes
-Frames found: 0
-Aligned coverage: 0/57746 = 0.0%
-Marker intact: 0/0
-
-State byte distribution:

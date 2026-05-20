@@ -1,3 +1,67 @@
+# ============================================
+# OpenIPC PTZ — MC800S Investigation
+# ============================================
+
+# --- Capture data (binary, CSV exports, decode summaries) ---
+# WaveForms/AD3/sigrok captures and decoded outputs.
+# Regeneratable from camera; protocol findings are documented
+# in HANDOFF.md and MC800S-system-map.md.
+*.bin
+*.csv
+*.summary.txt
+# Exception: nucleo firmware images stay tracked
+!nucleo_la/*.bin
+
+# --- Logic analyzer session/project files ---
+*.pvs
+*.sr
+*.dwf3work
+Session 1
+
+# --- Raw extensionless binary captures (baud sweeps, etc.) ---
+hk32115200*
+hk32f19200
+hk32f2
+hk32f38400
+hk32f4800
+upt_exec
+upt_exec_test
+
+# --- Superseded datasheet text extracts ---
+# The PDF (hk32f030m.pdf) is tracked; text extracts are regeneratable.
+hk32f030_datasheet_text.txt
+hk32f030m.txt
+hk32f030m_datasheet_text.txt
+chinese_hk32_full.txt
+chinese_extract_log.txt
+chinese_pdf_preview.txt
+hk32f030_docplayer.txt
+hk32f030m_roboeq.txt
+bits_n_pieces.txt
+
+# --- Downloaded/duplicate PDFs ---
+bits_n_pieces.pdf
+hk32f030m_ds.pdf
+Usersmatthinvestigatehk32f030m_ds.pdf
+
+# --- Superseded glitch script iterations ---
+hk32_glitch_sweep_v2.dwf3script
+hk32_glitch_sweep_v3.dwf3script
+hk32_glitch_unlock.dwf3script
+glitch_diag.dwf3script
+glitchscript1.js
+staticio_probe.dwf3script
+test_staticio.dwf3script
+test_log.txt
+glitchWS.dwf3work
+
+# --- Log files ---
+*.log
+
+# --- Converted/duplicate capture files ---
+dwnclick_converted.csv
+whitewire.bin
+
 # --- Working files / extracted data ---
 sr_extract/
 *.bin-0.extracted/
@@ -11,7 +75,7 @@ __pycache__/
 *.pyc
 *.pyo
 
-# --- Cloned external sources (recreate via git clone if needed) ---
+# --- Cloned external sources (recreate via git clone) ---
 nucleo_la/blackpill_source/
 nucleo_la/source/
 nucleo_la/logicalrust/
@@ -23,28 +87,10 @@ nucleo_la/openocd.zip
 
 # --- Personal / environment ---
 *.env
-*.local
 *credentials*
 *password*
 
-# --- Large captures (regeneratable from camera) — uncomment if you want to track them
-# *.sr
-# *.bin
-
-# --- Experimental baud-sweep outputs (regeneratable, not worth committing)
-ev_b*_*.bin
-ev_b*_*.csv
-ev_b*_*.summary.txt
-utd_b9_*.bin
-utd_b0_*.bin
-utd_b1_19200.bin
-utd_b1_38400.bin
-utd_b1_9600.bin
-white_capture2.*
-dlr_b9_*.bin
-cap*_white_9600.bin
-
-# --- Claude worktree scratch
+# --- Claude worktree scratch ---
 .claude/worktrees/
 
 # --- OS / editor ---
