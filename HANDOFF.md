@@ -134,10 +134,13 @@ SoC main board (SSC338Q on IMA80S15)
 ## 🔥 BREAKTHROUGH 2026-05-20 — Debug lock permanently destroyed + SRAM dumped
 
 Voltage glitch attack on the HK32F030MF4P6 using an AD3 Patterns instrument
-(P2N2222A NPN crowbar, 560Ω base resistor, DIO3 trigger) permanently corrupted
-the `DBG_CLK_CTL` EEPROM option byte at `0x1FFFF814` from `0x12DE` (locked) to
-`0xFFFF` (any value ≠ 0x12DE = unlocked). **Debug access is now permanent —
-survives power cycles. No more glitching needed.**
+(P2N2222A NPN crowbar, 560Ω base resistor, DIO3 trigger, **400–700 µs delay
+sweet spot**) permanently corrupted the `DBG_CLK_CTL` EEPROM option byte at
+`0x1FFFF814` from `0x12DE` (locked) to `0xFFFF` (any value ≠ 0x12DE = unlocked).
+The corruption is from the glitch disrupting the option byte read during POR
+reset temporization — not from overvoltage (the ~4.5 V VDD bounce on crowbar
+release is within the VIN = VDD + 4.0 V pin spec per datasheet Table 4-1).
+**Debug access is now permanent — survives power cycles. No more glitching needed.**
 
 However, **RDP Level 1 remains active** (RDP byte at `0x1FFFF800[7:0]` = 0x00,
 FLASH_IF OBR bit 1 = 1). Flash reads return `0xAAAAAAAA`. EEPROM reads also
@@ -206,13 +209,22 @@ return `0xAA` — same RDP protection.
 - **Reset timing**: 120 µs NRST hold (low), then release. 1300 ms boot wait before SWD probe.
 
 **Why it became permanent:**
-- VDD overshoot on crowbar release hit **~4.5 V** (absolute max rating is 4.0 V).
-  The repeated over-voltage spikes during the sweep permanently corrupted the
-  `DBG_CLK_CTL` EEPROM byte at `0x1FFFF814` from `0x12DE` → `0xFFFF`.
-  Any value ≠ `0x12DE` = debug clock enabled. **Survives power cycles permanently.**
-- A **10Ω series resistor on the collector** would damp the overshoot and keep it
-  within spec if you want a temporary (per-boot) bypass without permanent damage.
-  We didn't install one — the permanent unlock was a happy accident.
+- The repeated glitch cycles permanently corrupted the `DBG_CLK_CTL` EEPROM byte
+  at `0x1FFFF814` from `0x12DE` → `0xFFFF`. Any value ≠ `0x12DE` = debug clock
+  enabled. **Survives power cycles permanently.**
+- The ~4.5 V VDD overshoot on crowbar release is **not harmful** — the HK32F
+  datasheet Table 4-1 rates VIN at VDD + 4.0 V max, and the overshoot is just
+  the LDO ringing on recovery. The EEPROM corruption is from the glitch doing
+  its job (corrupting the option byte read/write-back during the POR reset
+  temporization), not from overvoltage damage.
+- **POR/PDR characteristics** (Table 4-6): falling threshold 1.80–1.96 V,
+  rising threshold 1.84–2.00 V, tRSTTEMPO = **1.50–4.50 ms**. The glitch must
+  pull VDD below ~1.8 V to trigger the POR mechanism. The 400–700 µs delay sweet
+  spot targets the early portion of the option-byte loading sequence.
+- If you want a **temporary (per-boot) bypass without permanent EEPROM damage**,
+  add a **10Ω series resistor on the collector** to limit crowbar current and
+  reduce VDD collapse depth — aim for a dip to ~1.5 V (below POR) but short
+  enough that the chip recovers cleanly.
 
 **Known issues during development:**
 - A JavaScript **signed-integer comparison bug** in the dump script (`if (stat >= 0xF0000000)`)
@@ -574,7 +586,7 @@ most recent change is always at the top of the log.
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-05-20 | **Repo cleanup + public reproducibility.** Removed 118 capture data files (4.3 MB) from tracking — all regeneratable, findings documented here. Added comprehensive .gitignore. Updated glitch attack section with accurate parameters: **400–700 µs delay sweet spot**, both narrow (100–500ns) and wide (1–2.5µs) widths worked, 4.5V overshoot is what permanently killed the lock. Added "Getting started" section for public repo users. Fixed Phase 1b status to reflect full 4KB SRAM dump. | *(this commit)* |
+| 2026-05-20 | **Repo cleanup + public reproducibility + overshoot correction.** Removed 118 capture data files (4.3 MB) from tracking. Added .gitignore. Documented glitch parameters: **400–700 µs delay sweet spot**, narrow + wide widths both work. **Corrected**: 4.5V VDD overshoot is NOT harmful (VIN max = VDD + 4.0V per Table 4-1) — EEPROM corruption is from glitch disrupting option byte read during POR tRSTTEMPO, not overvoltage. Added POR/PDR specs (threshold 1.8V, tRSTTEMPO 1.5–4.5ms). Added "Getting started" section. Fixed Phase 1b → full 4KB SRAM. | *(this commit)* |
 | 2026-05-20 | **🔥 Debug lock permanently destroyed + SRAM/peripheral dump complete.** Voltage glitch attack (AD3 Patterns, P2N2222A crowbar, 10 MHz) permanently corrupted DBG_CLK_CTL from 0x12DE→0xFFFF. SWD now works after power cycle. RDP Level 1 still active (flash/EEPROM return 0xAA). Extracted 3KB/4KB SRAM (active stack area blocked last 1KB), all peripheral registers. Key findings: AF UART is software bit-banged (no second hardware USART), motor step profile found in SRAM (08-08-08-06-06-06-04-04-04), flash function addresses recovered from stack frames, IWDG not used, no DMA/SPI/I2C/PWM. Fixed critical JS signed-integer comparison bug in SWD scripts. Added AP reinit between memory regions to fix TAR write failures. Phase 1 complete. Shifting to AF protocol capture. | *(this commit)* |
 | 2026-05-16 | **Corrected `DBG_CLK_CTL` address** + bootloader-dead conclusion authoritatively confirmed. User provided the actual HK32F030M datasheet (Rev 1.2.0, 2021-11-23) which corrects two things: **(1)** `DBG_CLK_CTL[15:0]` lives at flash option word `0x1FFF_F814`, not `0x1FFF_F810` as previously stated (the `_F810` slot is actually `IWDG_INI_KEY[15:0] / IWDG_RL_IV[11:0]`).  Glitch attack target updated to the correct address. **(2)** The previous research conclusion that the M-variant has no ROM bootloader is now confirmed end-to-end from the authoritative Hangshun document: no "Boot mode" section, no BOOT0 pin, no system memory region in the memory map, only USART1 (no USART2). The "boot message" we see on the white wire at 9600 baud ASCII is the **application firmware's** printf banner ("version :1.20 / lens :LH3X / Watch Dog :Enable"), not a ROM bootloader protocol. System map updated with non-destructive correction markers per CLAUDE.md Rule 2. Also added M-variant peculiarities section (only USART1, separate EEPROM region, 64-bit UID, four available packages SON8/TSSOP16/TSSOP20/QFN20). | *(this commit)* |
 | 2026-05-16 | **B15 = direction byte (confirmed)** + opcode hypothesis revision. New batch of 13 isolated captures (panL/R, tiltU/D, speeds, zoom variants, iris) shows: B15=0x06 → LEFT/UP, B15=0x60 → RIGHT/DOWN (same encoding across both axes). **However the previous "B8 = subsystem opcode" theory is wrong** — short isolated captures show 0x98 dominant in pan/tilt/iris captures (which earlier theory called "focus settling state"). Revised hypothesis: **B8 = motor phase / frame type** (not subsystem), with previous "100% 0x86" captures being only the sustained-continuous-motion phase. User clarified focus0002/0003 from prior batch were focus NEAR vs focus FAR (focus near has more motor travel → 0x9E dominant; focus far has more iris compensation → 0x1E dominant). User confirmed no probe changes between batches. | *(this commit)* |
