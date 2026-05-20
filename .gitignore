@@ -59,6 +59,7 @@ glitchWS.dwf3work
 *.log
 
 # --- Converted/duplicate capture files ---
+*.frames.txt
 dwnclick_converted.csv
 whitewire.bin
 
