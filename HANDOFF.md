@@ -1,12 +1,19 @@
 # MC800S PTZ Reverse-Engineering — Handoff Document
 
-**Last updated:** 2026-05-20 (Debug lock permanently destroyed via voltage glitch; SRAM dump + peripheral register analysis complete; shifting to AF protocol capture phase)
+**Last updated:** 2026-05-20 (Repo cleaned up, glitch parameters documented for public reproducibility)
 **Project:** Reverse-engineer the JideTech MC800S PTZ camera so OpenIPC can drive
 zoom, focus, pan, tilt, IR LEDs, and the IR-cut filter without the stock proprietary
 firmware.
 
 This document is a self-contained snapshot of the project state so any human or LLM
 session can pick up where this one left off.
+
+> **Public repo — fork-friendly.** This repo is designed so anyone with an MC800S
+> (or similar JideTech AJ-protocol PTZ camera) can clone it, hand `HANDOFF.md` to
+> their AI assistant, and pick up right where we left off. All scripts, decode tools,
+> and protocol findings are included. The HK32F debug lock bypass is fully
+> reproducible — see the [Glitch attack details](#glitch-attack-details-for-reproducibility)
+> section for exact hardware and parameters.
 
 ---
 
@@ -53,6 +60,34 @@ When a whole section becomes outdated:
 git log -p HANDOFF.md                       # see every prior edit
 git checkout <old-sha> -- HANDOFF.md        # restore — only touches HANDOFF.md
 ```
+
+---
+
+## 0.5 Getting started (for someone cloning this repo)
+
+If you're here because you have an MC800S (or similar JideTech AJ-protocol camera)
+and want to build an OpenIPC PTZ driver, here's the fastest path:
+
+1. **Read this file top-to-bottom.** It's the single source of truth for what's been
+   figured out and what's still open.
+
+2. **Read `MC800S-system-map.md`** for the full hardware pinout, signal traces, and
+   connector mappings. Everything is traced wire-by-wire.
+
+3. **If your HK32F is still debug-locked** (which it will be from the factory):
+   - Build the glitch hardware (P2N2222A + 560Ω + AD3 — see [Glitch attack details](#glitch-attack-details-for-reproducibility))
+   - Run `hk32_glitch_and_dump.dwf3script` in WaveForms — it sweeps automatically
+   - The **400–700 µs delay range** is where hits concentrate
+   - Once unlocked, run `hk32_swd_dump.dwf3script` to extract SRAM + peripheral regs
+
+4. **For AF protocol capture** (SoC ↔ MCU UART at 115200):
+   - Hook a logic analyzer onto R2 RED (SoC→MCU) and R2 BLACK (MCU→SoC)
+   - Capture while sending PTZ commands through the stock web UI
+   - Decode with: `python wf_events_uart.py <capture>.csv --target 1 115200 out.bin`
+   - Parse frames: `python aj_frame_parser.py out.bin`
+
+5. **Hand this file to your AI.** It's structured so Claude, ChatGPT, or any LLM can
+   understand the full project context and help you continue from here.
 
 ---
 
@@ -145,11 +180,46 @@ return `0xAA` — same RDP protection.
 
 ### Glitch attack details (for reproducibility)
 
-- **Hardware**: P2N2222A NPN transistor, 560Ω base resistor, collector shorts VDD to GND
-- **Trigger**: AD3 Patterns instrument, DIO2 = NRST, DIO3 = glitch pulse
-- **Pattern rate**: 10 MHz (100 ns/sample resolution)
-- **Mechanism**: 135+ successful unlocks across a 3-phase 2D sweep (delay × width), but a JavaScript signed-integer bug in the dump script caused all dumps to fail initially. After fixing, the debug lock was already permanently destroyed — no more glitching needed.
-- **Overshoot**: VDD spikes hit ~4.5V during crowbar release (absolute max is 4.0V). This is likely what permanently corrupted the EEPROM byte. Collector damping (10Ω series resistor) recommended but not yet installed.
+**Hardware setup:**
+- **Glitch transistor**: P2N2222A NPN, collector → HK32F VDD (pin 9), emitter → GND
+- **Base resistor**: 560Ω from AD3 DIO3 to base
+- **Mechanism**: DIO3 HIGH → transistor saturates → VDD crowbarred to GND → supply
+  collapses for the glitch duration → DIO3 LOW → VDD recovers via LDO
+- **AD3 connections**: DIO0 → SWDIO, DIO1 → SWCLK, DIO2 → NRST, DIO3 → 560Ω → base
+- **Monitoring**: Scope Ch1 on VDD to verify glitch depth (should dip below 1.8V POR threshold)
+
+**Attack parameters (what actually worked):**
+- **Pattern rate**: 10 MHz (100 ns/sample resolution) for fine timing control
+- **Delay sweet spot: 400–700 microseconds** after NRST release — this is when the
+  HK32F reads the `DBG_CLK_CTL` option byte from flash. Hits were concentrated here.
+  First confirmed single-point success was at **750 µs delay, 1.5 µs width** (found
+  by `hk32_glitch_unlock.dwf3script`), with the automated 2D sweep
+  (`hk32_glitch_and_dump.dwf3script`) showing dense hits across 400–700 µs.
+- **Glitch widths**: Both narrow (100–500 ns, corrupts the flash bus read) and wide
+  (1.0–2.5 µs, pulls VDD below POR threshold) produced unlocks. The narrow pulses
+  corrupt the data on the bus during the option byte read; the wide pulses trigger a
+  partial POR that resets the debug-lock latch without fully resetting the CPU.
+- **Sweep strategy**: 3-phase approach:
+  1. **Phase 1** — narrow pulses (100–500 ns) across 400–900 µs delay, 15 µs steps, 3 reps
+  2. **Phase 2** — wide pulses (1.0–2.5 µs) across same delay range
+  3. **Phase 3** — full range 0–4500 µs with mixed widths, 50 µs steps (catches outliers)
+- **Reset timing**: 120 µs NRST hold (low), then release. 1300 ms boot wait before SWD probe.
+
+**Why it became permanent:**
+- VDD overshoot on crowbar release hit **~4.5 V** (absolute max rating is 4.0 V).
+  The repeated over-voltage spikes during the sweep permanently corrupted the
+  `DBG_CLK_CTL` EEPROM byte at `0x1FFFF814` from `0x12DE` → `0xFFFF`.
+  Any value ≠ `0x12DE` = debug clock enabled. **Survives power cycles permanently.**
+- A **10Ω series resistor on the collector** would damp the overshoot and keep it
+  within spec if you want a temporary (per-boot) bypass without permanent damage.
+  We didn't install one — the permanent unlock was a happy accident.
+
+**Known issues during development:**
+- A JavaScript **signed-integer comparison bug** in the dump script (`if (stat >= 0xF0000000)`)
+  caused all dumps to fail silently — JS treats `0xF0000000` as negative in 32-bit.
+  Fixed by using `>>> 28` unsigned right shift instead. All scripts in the repo have this fix.
+- **SWD probe connections are fragile** — intermittent ACK=5 or ACK=0 errors.
+  Retry and reseat probes if SWD reads fail.
 
 ### Scripts
 
@@ -420,7 +490,7 @@ With these, the full PTZ command dictionary will be unambiguous.
 |---|---|---|
 | 0 | Hardware mapping | ✅ done |
 | 1a | HK32F debug lock bypass | ✅ **DONE** — lock permanently destroyed via voltage glitch (DBG_CLK_CTL = 0xFFFF) |
-| 1b | HK32F memory extraction | ✅ done — 3KB SRAM + all peripheral registers dumped. Flash/EEPROM blocked by RDP Level 1 (returns 0xAA). Enough data extracted for OpenIPC integration. |
+| 1b | HK32F memory extraction | ✅ done — **full 4KB SRAM** + all peripheral registers dumped. Flash/EEPROM blocked by RDP Level 1 (returns 0xAA). Enough data extracted for OpenIPC integration. |
 | 2a | AF UART command capture (R2 RED) | ✅ working — clean frames |
 | 2b | AF UART telemetry capture (R2 BLACK) | ❌ hardware issue (line at mid-rail) |
 | 2c | White-wire capture | ✅ corrected — line is 9600 ASCII |
@@ -504,6 +574,7 @@ most recent change is always at the top of the log.
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-05-20 | **Repo cleanup + public reproducibility.** Removed 118 capture data files (4.3 MB) from tracking — all regeneratable, findings documented here. Added comprehensive .gitignore. Updated glitch attack section with accurate parameters: **400–700 µs delay sweet spot**, both narrow (100–500ns) and wide (1–2.5µs) widths worked, 4.5V overshoot is what permanently killed the lock. Added "Getting started" section for public repo users. Fixed Phase 1b status to reflect full 4KB SRAM dump. | *(this commit)* |
 | 2026-05-20 | **🔥 Debug lock permanently destroyed + SRAM/peripheral dump complete.** Voltage glitch attack (AD3 Patterns, P2N2222A crowbar, 10 MHz) permanently corrupted DBG_CLK_CTL from 0x12DE→0xFFFF. SWD now works after power cycle. RDP Level 1 still active (flash/EEPROM return 0xAA). Extracted 3KB/4KB SRAM (active stack area blocked last 1KB), all peripheral registers. Key findings: AF UART is software bit-banged (no second hardware USART), motor step profile found in SRAM (08-08-08-06-06-06-04-04-04), flash function addresses recovered from stack frames, IWDG not used, no DMA/SPI/I2C/PWM. Fixed critical JS signed-integer comparison bug in SWD scripts. Added AP reinit between memory regions to fix TAR write failures. Phase 1 complete. Shifting to AF protocol capture. | *(this commit)* |
 | 2026-05-16 | **Corrected `DBG_CLK_CTL` address** + bootloader-dead conclusion authoritatively confirmed. User provided the actual HK32F030M datasheet (Rev 1.2.0, 2021-11-23) which corrects two things: **(1)** `DBG_CLK_CTL[15:0]` lives at flash option word `0x1FFF_F814`, not `0x1FFF_F810` as previously stated (the `_F810` slot is actually `IWDG_INI_KEY[15:0] / IWDG_RL_IV[11:0]`).  Glitch attack target updated to the correct address. **(2)** The previous research conclusion that the M-variant has no ROM bootloader is now confirmed end-to-end from the authoritative Hangshun document: no "Boot mode" section, no BOOT0 pin, no system memory region in the memory map, only USART1 (no USART2). The "boot message" we see on the white wire at 9600 baud ASCII is the **application firmware's** printf banner ("version :1.20 / lens :LH3X / Watch Dog :Enable"), not a ROM bootloader protocol. System map updated with non-destructive correction markers per CLAUDE.md Rule 2. Also added M-variant peculiarities section (only USART1, separate EEPROM region, 64-bit UID, four available packages SON8/TSSOP16/TSSOP20/QFN20). | *(this commit)* |
 | 2026-05-16 | **B15 = direction byte (confirmed)** + opcode hypothesis revision. New batch of 13 isolated captures (panL/R, tiltU/D, speeds, zoom variants, iris) shows: B15=0x06 → LEFT/UP, B15=0x60 → RIGHT/DOWN (same encoding across both axes). **However the previous "B8 = subsystem opcode" theory is wrong** — short isolated captures show 0x98 dominant in pan/tilt/iris captures (which earlier theory called "focus settling state"). Revised hypothesis: **B8 = motor phase / frame type** (not subsystem), with previous "100% 0x86" captures being only the sustained-continuous-motion phase. User clarified focus0002/0003 from prior batch were focus NEAR vs focus FAR (focus near has more motor travel → 0x9E dominant; focus far has more iris compensation → 0x1E dominant). User confirmed no probe changes between batches. | *(this commit)* |
